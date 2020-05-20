@@ -135,6 +135,8 @@ struct per_cpu_pages_ext __percpu *zone_per_cpu_pageset(struct zone *zone)
  */
 #define FPI_SKIP_KASAN_POISON	((__force fpi_t)BIT(2))
 
+atomic_long_t kswapd_waiters = ATOMIC_LONG_INIT(0);
+
 /* prevent >1 _updater_ of zone percpu pageset ->high and ->batch fields */
 static DEFINE_MUTEX(pcp_batch_high_lock);
 #define MIN_PERCPU_PAGELIST_HIGH_FRACTION (8)
@@ -5260,7 +5262,6 @@ __alloc_pages_slowpath(gfp_t gfp_mask, unsigned int order,
 	int reserve_flags;
 	unsigned long alloc_start = jiffies;
 	bool should_alloc_retry = false;
-	pg_data_t *pgdat = ac->preferred_zoneref->zone->zone_pgdat;
 	bool woke_kswapd = false;
 	/*
 	 * We also sanity check to catch abuse of atomic reserves being used by
@@ -5297,7 +5298,7 @@ restart:
 
 	if (alloc_flags & ALLOC_KSWAPD) {
 		if (!woke_kswapd) {
-			atomic_inc(&pgdat->kswapd_waiters);
+			atomic_long_inc(&kswapd_waiters);
 			woke_kswapd = true;
 		}
 		wake_all_kswapds(order, gfp_mask, ac);
@@ -5536,7 +5537,7 @@ fail:
 			"page allocation failure: order:%u", order);
 got_pg:
 	if (woke_kswapd)
-		atomic_dec(&pgdat->kswapd_waiters);
+		atomic_long_dec(&kswapd_waiters);
 	if (!page)
 		warn_alloc(gfp_mask, ac->nodemask,
 				"page allocation failure: order:%u", order);
@@ -7861,7 +7862,6 @@ static void __meminit pgdat_init_internals(struct pglist_data *pgdat)
 
 	pgdat_page_ext_init(pgdat);
 	lruvec_init(&pgdat->__lruvec);
-	pgdat->kswapd_waiters = (atomic_t)ATOMIC_INIT(0);
 }
 
 static void __meminit zone_init_internals(struct zone *zone, enum zone_type idx, int nid,

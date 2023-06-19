@@ -201,6 +201,12 @@ config LOCALVERSION_AUTO
 
 	  which is done within the script "scripts/setlocalversion".)
 
+config FACTORY_BUILD
+	bool "Build production-ready version of vendor modules"
+	default y
+	help
+	  Whenever you want to build production (factory) version of vendor modules
+
 config BUILD_SALT
 	string "Build ID Salt"
 	default ""

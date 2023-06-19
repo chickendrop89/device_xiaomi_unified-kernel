@@ -123,4 +123,8 @@ extern void md_add_elf_header(const struct md_region *entry);
 extern void md_update_elf_header(int entryno, const struct md_region *entry);
 extern int msm_minidump_clear_headers(const struct md_region *entry);
 
+#if IS_ENABLED(CONFIG_QCOM_MINIDUMP_LAST_KMSG)
+int last_kmsg_driver_init(void);
+#endif
+
 #endif

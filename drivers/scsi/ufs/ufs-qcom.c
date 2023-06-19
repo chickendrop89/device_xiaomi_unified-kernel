@@ -27,14 +27,13 @@
 #include <soc/qcom/minidump.h>
 #include <linux/nvmem-consumer.h>
 
+
+#define CREATE_TRACE_POINTS
+#include "ufs-qcom-trace.h"
 #include "ufshcd.h"
 #include "ufshcd-pltfrm.h"
 #include "unipro.h"
 #include "ufs-qcom.h"
-
-#define CREATE_TRACE_POINTS
-#include "ufs-qcom-trace.h"
-
 #include "ufshci.h"
 #include "ufs_quirks.h"
 #include "ufshcd-crypto-qti.h"

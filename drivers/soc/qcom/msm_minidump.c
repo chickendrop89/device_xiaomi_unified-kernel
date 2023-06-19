@@ -418,6 +418,9 @@ int msm_minidump_driver_probe(const struct md_init_data *data)
 	}
 
 	/* All updates above should be visible, before init completes */
+#if IS_ENABLED(CONFIG_QCOM_MINIDUMP_LAST_KMSG)
+	last_kmsg_driver_init();
+#endif
 	smp_store_release(&md_init_done, true);
 
 #if IS_MODULE(CONFIG_QCOM_MINIDUMP)

@@ -106,6 +106,10 @@ static int qcom_reboot_reason_probe(struct platform_device *pdev)
 	reboot->panic_nb.priority = INT_MAX;
 	atomic_notifier_chain_register(&panic_notifier_list, &reboot->panic_nb);
 
+	reboot->panic_nb.notifier_call = panic_prep_restart;
+	reboot->panic_nb.priority = INT_MAX;
+	atomic_notifier_chain_register(&panic_notifier_list, &reboot->panic_nb);
+
 	return 0;
 }
 

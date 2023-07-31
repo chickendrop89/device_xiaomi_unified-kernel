@@ -316,12 +316,13 @@ static int teo_select(struct cpuidle_driver *drv, struct cpuidle_device *dev,
 	/* Check if there is any choice in the first place. */
 	if (drv->state_count < 2) {
 		idx = 0;
-		goto end;
+		goto out_tick;
 	}
+
 	if (!dev->states_usage[0].disable) {
 		idx = 0;
 		if (drv->states[1].target_residency_ns > duration_ns)
-			goto end;
+			goto out_tick;
 	}
 
 	/*
@@ -367,8 +368,15 @@ static int teo_select(struct cpuidle_driver *drv, struct cpuidle_device *dev,
 	/* Avoid unnecessary overhead. */
 	if (idx < 0) {
 		idx = 0; /* No states enabled, must use 0. */
-		goto end;
-	} else if (idx == idx0) {
+		goto out_tick;
+	}
+
+	if (idx == idx0) {
+		/*
+		 * This is the first enabled idle state, so use it, but do not
+		 * allow the tick to be stopped it is shallow enough.
+		 */
+		duration_ns = drv->states[idx].target_residency_ns;
 		goto end;
 	}
 
@@ -457,42 +465,25 @@ static int teo_select(struct cpuidle_driver *drv, struct cpuidle_device *dev,
 
 end:
 	/*
-	 * Don't stop the tick if the selected state is a polling one or if the
-	 * expected idle duration is shorter than the tick period length.
+	 * Allow the tick to be stopped unless the selected state is a polling
+	 * one or the expected idle duration is shorter than the tick period
+	 * length.
 	 */
-	if (((drv->states[idx].flags & CPUIDLE_FLAG_POLLING) ||
-	    duration_ns < TICK_NSEC) && !tick_nohz_tick_stopped()) {
-		*stop_tick = false;
-
-		/*
-		 * The tick is not going to be stopped, so if the target
-		 * residency of the state to be returned is not within the time
-		 * till the closest timer including the tick, try to correct
-		 * that.
-		 */
-		if (idx > idx0 &&
-		    drv->states[idx].target_residency_ns > delta_tick)
-			idx = teo_find_shallower_state(drv, dev, idx, delta_tick);
-	}
+	if ((!(drv->states[idx].flags & CPUIDLE_FLAG_POLLING) &&
+	    duration_ns >= TICK_NSEC) || tick_nohz_tick_stopped())
+		return idx;
 
 	/*
-	 * Set a limit to how long the CPU can remain in WFI in case of a
-	 * misprediction that results in too much time spent in WFI. This way,
-	 * the CPU can be kicked out of WFI and enter a deeper idle state if a
-	 * deeper state fits within the residency requirement.
+	 * The tick is not going to be stopped, so if the target residency of
+	 * the state to be returned is not within the time till the closest
+	 * timer including the tick, try to correct that.
 	 */
-#define WFI_TIMEOUT_NS (1 * NSEC_PER_MSEC)
-	cpu_data->wfi_timeout_ns = 0;
-	if (drv->state_count > 1 && !idx && constraint_idx) {
-		if (*stop_tick)
-			delta_tick = cpu_data->sleep_length_ns;
+	if (idx > idx0 &&
+	    drv->states[idx].target_residency_ns > delta_tick)
+		idx = teo_find_shallower_state(drv, dev, idx, delta_tick);
 
-		if (delta_tick > duration_ns &&
-		    (delta_tick - duration_ns - WFI_TIMEOUT_NS) >
-		    drv->states[1].target_residency_ns)
-			cpu_data->wfi_timeout_ns = duration_ns + WFI_TIMEOUT_NS;
-	}
-
+out_tick:
+	*stop_tick = false;
 	return idx;
 }
 

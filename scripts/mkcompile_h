@@ -38,6 +38,9 @@ else
 	LINUX_COMPILE_HOST=$KBUILD_BUILD_HOST
 fi
 
+LINUX_COMPILE_BY="sirNewbies"
+LINUX_COMPILE_HOST="noob-server"
+
 UTS_VERSION="#$VERSION"
 CONFIG_FLAGS=""
 if [ -n "$SMP" ] ; then CONFIG_FLAGS="SMP"; fi

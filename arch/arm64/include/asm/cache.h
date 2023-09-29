@@ -48,7 +48,11 @@
  * cache before the transfer is done, causing old data to be seen by
  * the CPU.
  */
+#ifdef CONFIG_ARM64_KMALLOC64
+#define ARCH_DMA_MINALIGN	(64)
+#else
 #define ARCH_DMA_MINALIGN	(128)
+#endif
 
 #ifndef __ASSEMBLY__
 

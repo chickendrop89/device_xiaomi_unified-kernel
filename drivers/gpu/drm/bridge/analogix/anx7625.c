@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright(c) 2020, Analogix Semiconductor. All rights reserved.
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  */
 #include <linux/gcd.h>
@@ -920,10 +921,10 @@ static void anx7625_power_on(struct anx7625_data *ctx)
 	usleep_range(11000, 12000);
 
 	/* Power on pin enable */
-	gpiod_set_value(ctx->pdata.gpio_p_on, 1);
+	gpiod_set_value_cansleep(ctx->pdata.gpio_p_on, 1);
 	usleep_range(10000, 11000);
 	/* Power reset pin enable */
-	gpiod_set_value(ctx->pdata.gpio_reset, 1);
+	gpiod_set_value_cansleep(ctx->pdata.gpio_reset, 1);
 	usleep_range(10000, 11000);
 
 	DRM_DEV_DEBUG_DRIVER(dev, "power on !\n");
@@ -943,9 +944,9 @@ static void anx7625_power_standby(struct anx7625_data *ctx)
 		return;
 	}
 
-	gpiod_set_value(ctx->pdata.gpio_reset, 0);
+	gpiod_set_value_cansleep(ctx->pdata.gpio_reset, 0);
 	usleep_range(1000, 1100);
-	gpiod_set_value(ctx->pdata.gpio_p_on, 0);
+	gpiod_set_value_cansleep(ctx->pdata.gpio_p_on, 0);
 	usleep_range(1000, 1100);
 
 	ret = regulator_bulk_disable(ARRAY_SIZE(ctx->pdata.supplies),
@@ -1087,6 +1088,9 @@ static void anx7625_start_dp_work(struct anx7625_data *ctx)
 		return;
 
 	DRM_DEV_DEBUG_DRIVER(dev, "Secure OCM version=%02x\n", ret);
+
+	ctx->display_timing_valid = 1;
+	anx7625_dp_start(ctx);
 }
 
 static int anx7625_read_hpd_status_p0(struct anx7625_data *ctx)
@@ -1116,9 +1120,6 @@ static void anx7625_hpd_polling(struct anx7625_data *ctx)
 			  INTERFACE_CHANGE_INT, 0);
 
 	anx7625_start_dp_work(ctx);
-
-	if (!ctx->pdata.panel_bridge && ctx->bridge_attached)
-		drm_helper_hpd_irq_event(ctx->bridge.dev);
 }
 
 static void anx7625_remove_edid(struct anx7625_data *ctx)
@@ -1203,9 +1204,6 @@ static void anx7625_work_func(struct work_struct *work)
 	event = anx7625_hpd_change_detect(ctx);
 	if (event < 0)
 		goto unlock;
-
-	if (ctx->bridge_attached)
-		drm_helper_hpd_irq_event(ctx->bridge.dev);
 
 unlock:
 	mutex_unlock(&ctx->lock);
@@ -1308,7 +1306,7 @@ static int anx7625_attach_dsi(struct anx7625_data *ctx)
 	struct mipi_dsi_host *host;
 	const struct mipi_dsi_device_info info = {
 		.type = "anx7625",
-		.channel = 0,
+		.channel = ctx->channel,
 		.node = NULL,
 	};
 
@@ -1385,9 +1383,7 @@ static int anx7625_bridge_attach(struct drm_bridge *bridge,
 		if (err)
 			return err;
 	}
-
-	ctx->bridge_attached = 1;
-
+	device_link_add(bridge->dev->dev, dev, DL_FLAG_STATELESS);
 	return 0;
 }
 
@@ -1768,6 +1764,7 @@ static int anx7625_i2c_probe(struct i2c_client *client,
 	struct anx7625_platform_data *pdata;
 	int ret = 0;
 	struct device *dev = &client->dev;
+	struct device_node *parent_node = of_get_parent(dev->of_node);
 
 	if (!i2c_check_functionality(client->adapter,
 				     I2C_FUNC_SMBUS_I2C_BLOCK)) {
@@ -1803,6 +1800,8 @@ static int anx7625_i2c_probe(struct i2c_client *client,
 		return ret;
 	}
 	anx7625_init_gpio(platform);
+
+	of_property_read_u32_index(parent_node, "reg", 0, &platform->channel);
 
 	mutex_init(&platform->lock);
 

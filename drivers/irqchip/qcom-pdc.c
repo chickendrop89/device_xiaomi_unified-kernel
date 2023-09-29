@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2017-2019, 2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
+#include <linux/delay.h>
 #include <linux/err.h>
 #include <linux/init.h>
 #include <linux/interrupt.h>
@@ -12,17 +14,26 @@
 #include <linux/io.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/notifier.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
 #include <linux/of_device.h>
 #include <linux/of_irq.h>
 #include <linux/soc/qcom/irq.h>
 #include <linux/spinlock.h>
+#include <linux/suspend.h>
+#include <linux/syscore_ops.h>
 #include <linux/slab.h>
 #include <linux/types.h>
 
-#define PDC_MAX_IRQS		168
+#include <linux/qcom_scm.h>
+#include <linux/ipc_logging.h>
+
+#define PDC_MAX_IRQS		240
+#define PDC_IPC_LOG_SZ		2
 #define PDC_MAX_GPIO_IRQS	256
+
+#define MAX_ENABLE_REGS ((PDC_MAX_IRQS/32) + 1)
 
 #define CLEAR_INTR(reg, intr)	(reg & ~(1 << intr))
 #define ENABLE_INTR(reg, intr)	(reg | (1 << intr))
@@ -32,16 +43,33 @@
 
 #define PDC_NO_PARENT_IRQ	~0UL
 
+struct pdc_type_info {
+	u32 type;
+	bool set;
+};
+static struct pdc_type_info pdc_type_config[PDC_MAX_IRQS];
+
 struct pdc_pin_region {
 	u32 pin_base;
 	u32 parent_base;
 	u32 cnt;
 };
 
+struct spi_cfg_regs {
+	union {
+		u64 start;
+		void __iomem *base;
+	};
+	resource_size_t size;
+	bool scm_io;
+};
+
 static DEFINE_RAW_SPINLOCK(pdc_lock);
 static void __iomem *pdc_base;
 static struct pdc_pin_region *pdc_region;
 static int pdc_region_cnt;
+static struct spi_cfg_regs *spi_cfg;
+static void *pdc_ipc_log;
 
 static void pdc_reg_write(int reg, u32 i, u32 val)
 {
@@ -68,6 +96,7 @@ static void pdc_enable_intr(struct irq_data *d, bool on)
 	enable = on ? ENABLE_INTR(enable, mask) : CLEAR_INTR(enable, mask);
 	pdc_reg_write(IRQ_ENABLE_BANK, index, enable);
 	raw_spin_unlock_irqrestore(&pdc_lock, flags);
+	ipc_log_string(pdc_ipc_log, "PIN=%d enable=%d", d->hwirq, on);
 }
 
 static void qcom_pdc_gic_disable(struct irq_data *d)
@@ -80,6 +109,60 @@ static void qcom_pdc_gic_enable(struct irq_data *d)
 {
 	pdc_enable_intr(d, true);
 	irq_chip_enable_parent(d);
+}
+
+static u32 __spi_pin_read(unsigned int pin)
+{
+	void __iomem *cfg_reg = spi_cfg->base + pin * 4;
+	u64 scm_cfg_reg = spi_cfg->start + pin * 4;
+
+	if (spi_cfg->scm_io) {
+		unsigned int val;
+
+		qcom_scm_io_readl(scm_cfg_reg, &val);
+		return val;
+	} else {
+		return readl(cfg_reg);
+	}
+}
+
+static void __spi_pin_write(unsigned int pin, unsigned int val)
+{
+	void __iomem *cfg_reg = spi_cfg->base + pin * 4;
+	u64 scm_cfg_reg = spi_cfg->start + pin * 4;
+
+	if (spi_cfg->scm_io)
+		qcom_scm_io_writel(scm_cfg_reg, val);
+	else
+		writel(val, cfg_reg);
+}
+
+static int spi_configure_type(irq_hw_number_t hwirq, unsigned int type)
+{
+	int spi = hwirq - 32;
+	u32 pin = spi / 32;
+	u32 mask = BIT(spi % 32);
+	u32 val;
+	unsigned long flags;
+
+	if (!spi_cfg)
+		return 0;
+
+	if (pin * 4 > spi_cfg->size)
+		return -EFAULT;
+
+	raw_spin_lock_irqsave(&pdc_lock, flags);
+	val = __spi_pin_read(pin);
+	val &= ~mask;
+	if (type & IRQ_TYPE_LEVEL_MASK)
+		val |= mask;
+	__spi_pin_write(pin, val);
+	ipc_log_string(pdc_ipc_log,
+		       "SPI config: GIC-SPI=%d (reg=%d,bit=%d) val=%d",
+		       spi, pin, spi % 32, type & IRQ_TYPE_LEVEL_MASK);
+	raw_spin_unlock_irqrestore(&pdc_lock, flags);
+
+	return 0;
 }
 
 /*
@@ -118,6 +201,7 @@ enum pdc_irq_config_bits {
  */
 static int qcom_pdc_gic_set_type(struct irq_data *d, unsigned int type)
 {
+	int parent_hwirq = d->parent_data->hwirq;
 	enum pdc_irq_config_bits pdc_type;
 	enum pdc_irq_config_bits old_pdc_type;
 	int ret;
@@ -148,6 +232,16 @@ static int qcom_pdc_gic_set_type(struct irq_data *d, unsigned int type)
 
 	old_pdc_type = pdc_reg_read(IRQ_i_CFG, d->hwirq);
 	pdc_reg_write(IRQ_i_CFG, d->hwirq, pdc_type);
+	ipc_log_string(pdc_ipc_log, "Set type: PIN=%d pdc_type=%d gic_type=%d",
+		       d->hwirq, pdc_type, type);
+
+	pdc_type_config[d->hwirq].type = pdc_type;
+	pdc_type_config[d->hwirq].set = true;
+
+	/* Additionally, configure (only) the GPIO in the f/w */
+	ret = spi_configure_type(parent_hwirq, type);
+	if (ret)
+		return ret;
 
 	ret = irq_chip_set_type_parent(d, type);
 	if (ret)
@@ -186,6 +280,95 @@ static struct irq_chip qcom_pdc_gic_chip = {
 	.irq_set_vcpu_affinity	= irq_chip_set_vcpu_affinity_parent,
 	.irq_set_affinity	= irq_chip_set_affinity_parent,
 };
+
+#if IS_ENABLED(CONFIG_HIBERNATION) || IS_ENABLED(CONFIG_DEEPSLEEP)
+static bool pdc_save_restore;
+static u32 pdc_enabled[MAX_ENABLE_REGS] = { 0 };
+
+static int pdc_suspend_notifier(struct notifier_block *nb,
+				unsigned long event, void *dummy)
+{
+	if (event == PM_HIBERNATION_PREPARE)
+		pdc_save_restore = true;
+	else if (event == PM_POST_HIBERNATION)
+		pdc_save_restore = false;
+	else if (event == PM_SUSPEND_PREPARE && pm_suspend_via_firmware())
+		pdc_save_restore = true;
+	else if (event == PM_POST_SUSPEND && pm_suspend_via_firmware())
+		pdc_save_restore = false;
+
+	return NOTIFY_OK;
+}
+
+static int pdc_suspend(void)
+{
+	int i, last_region = pdc_region_cnt - 1;
+	u32 max_reg_index, max_irq;
+
+	if (!pdc_save_restore)
+		return 0;
+
+	max_irq = pdc_region[last_region].pin_base + pdc_region[last_region].cnt;
+	max_reg_index = max_irq / 32;
+
+	for (i = 0; i <= max_reg_index; i++)
+		pdc_enabled[i] = pdc_reg_read(IRQ_ENABLE_BANK, i);
+
+	return 0;
+}
+
+static void pdc_resume(void)
+{
+	int i;
+	u32 config;
+
+	if (!pdc_save_restore)
+		return;
+
+	for (i = 0; i < PDC_MAX_IRQS; i++) {
+		if (pdc_type_config[i].set) {
+			pdc_reg_write(IRQ_i_CFG, i, pdc_type_config[i].type);
+
+			do {
+				config = pdc_reg_read(IRQ_i_CFG, i);
+				if (config == pdc_type_config[i].type)
+					break;
+				udelay(5);
+			} while (1);
+		}
+	}
+
+	for (i = 0; i < MAX_ENABLE_REGS; i++) {
+		if (!pdc_enabled[i])
+			continue;
+
+		pdc_reg_write(IRQ_ENABLE_BANK, i, pdc_enabled[i]);
+	}
+}
+
+static struct notifier_block pdc_notifier_block = {
+	.notifier_call = pdc_suspend_notifier,
+};
+
+static struct syscore_ops pdc_syscore_ops = {
+	.suspend = pdc_suspend,
+	.resume = pdc_resume,
+};
+
+static int pdc_init_save_restore_config(void)
+{
+	u32 ret;
+
+	register_syscore_ops(&pdc_syscore_ops);
+
+	ret = register_pm_notifier(&pdc_notifier_block);
+	if (ret)
+		unregister_syscore_ops(&pdc_syscore_ops);
+
+	return ret;
+}
+#endif
+
 
 static irq_hw_number_t get_parent_hwirq(int pin)
 {
@@ -251,6 +434,8 @@ static int qcom_pdc_alloc(struct irq_domain *domain, unsigned int virq,
 	parent_fwspec.param[1]    = parent_hwirq;
 	parent_fwspec.param[2]    = type;
 
+	ipc_log_string(pdc_ipc_log, "Alloc: PIN=%d GIC-SPI=%d",
+		       hwirq, parent_hwirq);
 	return irq_domain_alloc_irqs_parent(domain, virq, nr_irqs,
 					    &parent_fwspec);
 }
@@ -298,6 +483,8 @@ static int qcom_pdc_gpio_alloc(struct irq_domain *domain, unsigned int virq,
 	parent_fwspec.param[1]    = parent_hwirq;
 	parent_fwspec.param[2]    = type;
 
+	ipc_log_string(pdc_ipc_log, "GPIO alloc: PIN=%d GIC-SPI=%d",
+		       hwirq, parent_hwirq);
 	return irq_domain_alloc_irqs_parent(domain, virq, nr_irqs,
 					    &parent_fwspec);
 }
@@ -363,6 +550,7 @@ static int pdc_setup_pin_mapping(struct device_node *np)
 static int qcom_pdc_init(struct device_node *node, struct device_node *parent)
 {
 	struct irq_domain *parent_domain, *pdc_domain, *pdc_gpio_domain;
+	struct resource res;
 	int ret;
 
 	pdc_base = of_iomap(node, 0);
@@ -393,6 +581,27 @@ static int qcom_pdc_init(struct device_node *node, struct device_node *parent)
 		goto fail;
 	}
 
+	ret = of_address_to_resource(node, 1, &res);
+	if (!ret) {
+		spi_cfg = kcalloc(1, sizeof(*spi_cfg), GFP_KERNEL);
+		if (!spi_cfg) {
+			ret = -ENOMEM;
+			goto remove;
+		}
+		spi_cfg->scm_io = of_find_property(node,
+						   "qcom,scm-spi-cfg", NULL);
+		spi_cfg->size = resource_size(&res);
+		if (spi_cfg->scm_io) {
+			spi_cfg->start = res.start;
+		} else {
+			spi_cfg->base = ioremap(res.start, spi_cfg->size);
+			if (!spi_cfg->base) {
+				ret = -ENOMEM;
+				goto remove;
+			}
+		}
+	}
+
 	pdc_gpio_domain = irq_domain_create_hierarchy(parent_domain,
 					IRQ_DOMAIN_FLAG_QCOM_PDC_WAKEUP,
 					PDC_MAX_GPIO_IRQS,
@@ -405,11 +614,16 @@ static int qcom_pdc_init(struct device_node *node, struct device_node *parent)
 	}
 
 	irq_domain_update_bus_token(pdc_gpio_domain, DOMAIN_BUS_WAKEUP);
+#if IS_ENABLED(CONFIG_HIBERNATION) || IS_ENABLED(CONFIG_DEEPSLEEP)
+	pdc_init_save_restore_config();
+#endif
 
+	pdc_ipc_log = ipc_log_context_create(PDC_IPC_LOG_SZ, "pdc", 0);
 	return 0;
 
 remove:
 	irq_domain_remove(pdc_domain);
+	kfree(spi_cfg);
 fail:
 	kfree(pdc_region);
 	iounmap(pdc_base);

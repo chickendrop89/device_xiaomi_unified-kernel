@@ -82,7 +82,7 @@ struct spidev_data {
 static LIST_HEAD(device_list);
 static DEFINE_MUTEX(device_list_lock);
 
-static unsigned bufsiz = 4096;
+static unsigned int bufsiz = 35000;
 module_param(bufsiz, uint, S_IRUGO);
 MODULE_PARM_DESC(bufsiz, "data bytes in biggest supported SPI message");
 
@@ -705,6 +705,8 @@ static const struct of_device_id spidev_dt_ids[] = {
 	{ .compatible = "menlo,m53cpld" },
 	{ .compatible = "cisco,spi-petra" },
 	{ .compatible = "micron,spi-authenta" },
+	{ .compatible = "qcom,spi-msm-codec-slave" },
+	{ .compatible = "qcom,si5518-clk" },
 	{},
 };
 MODULE_DEVICE_TABLE(of, spidev_dt_ids);

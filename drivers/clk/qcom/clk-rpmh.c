@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (c) 2018-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/clk-provider.h>
@@ -52,6 +53,7 @@ struct clk_rpmh {
 	struct clk_hw hw;
 	const char *res_name;
 	u8 div;
+	bool optional;
 	u32 res_addr;
 	u32 res_on_val;
 	u32 state;
@@ -71,13 +73,14 @@ struct clk_rpmh_desc {
 static DEFINE_MUTEX(rpmh_clk_lock);
 
 #define __DEFINE_CLK_RPMH(_platform, _name, _name_active, _res_name,	\
-			  _res_en_offset, _res_on, _div)		\
+			  _res_en_offset, _res_on, _div, _optional)	\
 	static struct clk_rpmh _platform##_##_name_active;		\
 	static struct clk_rpmh _platform##_##_name = {			\
 		.res_name = _res_name,					\
 		.res_addr = _res_en_offset,				\
 		.res_on_val = _res_on,					\
 		.div = _div,						\
+		.optional = _optional,					\
 		.peer = &_platform##_##_name_active,			\
 		.valid_state_mask = (BIT(RPMH_WAKE_ONLY_STATE) |	\
 				      BIT(RPMH_ACTIVE_ONLY_STATE) |	\
@@ -97,6 +100,7 @@ static DEFINE_MUTEX(rpmh_clk_lock);
 		.res_addr = _res_en_offset,				\
 		.res_on_val = _res_on,					\
 		.div = _div,						\
+		.optional = _optional,					\
 		.peer = &_platform##_##_name,				\
 		.valid_state_mask = (BIT(RPMH_WAKE_ONLY_STATE) |	\
 					BIT(RPMH_ACTIVE_ONLY_STATE)),	\
@@ -111,15 +115,52 @@ static DEFINE_MUTEX(rpmh_clk_lock);
 		},							\
 	}
 
+#define DEFINE_CLK_RPMH_FIXED(_platform, _name, _name_active,	\
+				  _parent_name, _name_active_parent,	\
+				  _div)					\
+	static struct clk_fixed_factor _platform##_##_name = {		\
+		.mult = 1,						\
+		.div = _div,						\
+		.hw.init = &(struct clk_init_data){			\
+			.ops = &clk_fixed_factor_ops,			\
+			.name = #_name,					\
+			.parent_data =  &(const struct clk_parent_data){ \
+					.fw_name = #_parent_name,	\
+					.name = #_parent_name,		\
+			},						\
+			.num_parents = 1,				\
+		},							\
+	};								\
+	static struct clk_fixed_factor _platform##_##_name_active = {	\
+		.mult = 1,						\
+		.div = _div,						\
+		.hw.init = &(struct clk_init_data){			\
+			.ops = &clk_fixed_factor_ops,			\
+			.name = #_name_active,				\
+			.parent_data =  &(const struct clk_parent_data){ \
+					.fw_name = #_name_active_parent,\
+					.name = #_name_active_parent,	\
+			},						\
+			.num_parents = 1,				\
+		},							\
+	}
+
 #define DEFINE_CLK_RPMH_ARC(_platform, _name, _name_active, _res_name,	\
 			    _res_on, _div)				\
 	__DEFINE_CLK_RPMH(_platform, _name, _name_active, _res_name,	\
-			  CLK_RPMH_ARC_EN_OFFSET, _res_on, _div)
+			  CLK_RPMH_ARC_EN_OFFSET, _res_on, _div, false)
 
 #define DEFINE_CLK_RPMH_VRM(_platform, _name, _name_active, _res_name,	\
 				_div)					\
 	__DEFINE_CLK_RPMH(_platform, _name, _name_active, _res_name,	\
-			  CLK_RPMH_VRM_EN_OFFSET, 1, _div)
+			  CLK_RPMH_VRM_EN_OFFSET, 1, _div, false)
+
+#define DEFINE_CLK_RPMH_VRM_OPT(_platform, _name, _name_active,		\
+			_res_name, _div)				\
+	__DEFINE_CLK_RPMH(_platform, _name, _name_active, _res_name,	\
+			  CLK_RPMH_VRM_EN_OFFSET, 1, _div, true)
+
+
 
 #define DEFINE_CLK_RPMH_BCM(_platform, _name, _res_name)		\
 	static struct clk_rpmh _platform##_##_name = {			\
@@ -269,6 +310,9 @@ static int clk_rpmh_bcm_send_cmd(struct clk_rpmh *c, bool enable)
 	} else {
 		cmd_state = 0;
 	}
+
+	if (cmd_state > BCM_TCS_CMD_VOTE_MASK)
+		cmd_state = BCM_TCS_CMD_VOTE_MASK;
 
 	if (c->last_sent_aggr_state != cmd_state) {
 		cmd.addr = c->res_addr;
@@ -512,6 +556,77 @@ static const struct clk_rpmh_desc clk_rpmh_sm8350 = {
 	.num_clks = ARRAY_SIZE(sm8350_rpmh_clocks),
 };
 
+DEFINE_CLK_RPMH_ARC(waipio, bi_tcxo, bi_tcxo_ao, "xo.lvl", 0x3, 4);
+DEFINE_CLK_RPMH_VRM(waipio, ln_bb_clk1, ln_bb_clk1_ao, "lnbclka1", 4);
+DEFINE_CLK_RPMH_VRM(waipio, ln_bb_clk2, ln_bb_clk2_ao, "lnbclka2", 4);
+DEFINE_CLK_RPMH_VRM_OPT(waipio, rf_clk5, rf_clk5_ao, "rfclka5", 1);
+DEFINE_CLK_RPMH_VRM_OPT(waipio, rf_clk2, rf_clk2_ao, "rfclka2", 1);
+
+static struct clk_hw *waipio_rpmh_clocks[] = {
+	[RPMH_CXO_CLK]		= &waipio_bi_tcxo.hw,
+	[RPMH_CXO_CLK_A]	= &waipio_bi_tcxo_ao.hw,
+	[RPMH_LN_BB_CLK1]	= &waipio_ln_bb_clk1.hw,
+	[RPMH_LN_BB_CLK1_A]	= &waipio_ln_bb_clk1_ao.hw,
+	[RPMH_LN_BB_CLK2]	= &waipio_ln_bb_clk2.hw,
+	[RPMH_LN_BB_CLK2_A]	= &waipio_ln_bb_clk2_ao.hw,
+	[RPMH_RF_CLK1]		= &sdm845_rf_clk1.hw,
+	[RPMH_RF_CLK1_A]	= &sdm845_rf_clk1_ao.hw,
+	[RPMH_RF_CLK2]		= &waipio_rf_clk2.hw,
+	[RPMH_RF_CLK2_A]	= &waipio_rf_clk2_ao.hw,
+	[RPMH_RF_CLK3]		= &sdm845_rf_clk3.hw,
+	[RPMH_RF_CLK3_A]	= &sdm845_rf_clk3_ao.hw,
+	[RPMH_RF_CLK4]		= &sm8350_rf_clk4.hw,
+	[RPMH_RF_CLK4_A]	= &sm8350_rf_clk4_ao.hw,
+	[RPMH_RF_CLK5]		= &waipio_rf_clk5.hw,
+	[RPMH_RF_CLK5_A]	= &waipio_rf_clk5_ao.hw,
+	[RPMH_IPA_CLK]		= &sdm845_ipa.hw,
+};
+
+static const struct clk_rpmh_desc clk_rpmh_waipio = {
+	.clks = waipio_rpmh_clocks,
+	.num_clks = ARRAY_SIZE(waipio_rpmh_clocks),
+};
+
+DEFINE_CLK_RPMH_ARC(kalama, xo_pad, xo_pad_ao, "xo.lvl", 0x03, 2);
+DEFINE_CLK_RPMH_FIXED(kalama, bi_tcxo, bi_tcxo_ao, xo_pad, xo_pad_ao, 2);
+DEFINE_CLK_RPMH_VRM_OPT(kalama, rf_clk1, rf_clk1_ao, "clka1", 1);
+DEFINE_CLK_RPMH_VRM_OPT(kalama, rf_clk2, rf_clk2_ao, "clka2", 1);
+DEFINE_CLK_RPMH_VRM_OPT(kalama, rf_clk3, rf_clk3_ao, "clka3", 1);
+DEFINE_CLK_RPMH_VRM_OPT(kalama, rf_clk4, rf_clk4_ao, "clka4", 1);
+DEFINE_CLK_RPMH_VRM_OPT(kalama, rf_clk5, rf_clk5_ao, "clka5", 2);
+DEFINE_CLK_RPMH_VRM_OPT(kalama, ln_bb_clk1, ln_bb_clk1_ao, "clka6", 2);
+DEFINE_CLK_RPMH_VRM_OPT(kalama, ln_bb_clk2, ln_bb_clk2_ao, "clka7", 2);
+DEFINE_CLK_RPMH_VRM_OPT(kalama, ln_bb_clk3, ln_bb_clk3_ao, "clka8", 2);
+
+static struct clk_hw *kalama_rpmh_clocks[] = {
+	[RPMH_CXO_PAD_CLK]      = &kalama_xo_pad.hw,
+	[RPMH_CXO_PAD_CLK_A]    = &kalama_xo_pad_ao.hw,
+	[RPMH_CXO_CLK]          = &kalama_bi_tcxo.hw,
+	[RPMH_CXO_CLK_A]        = &kalama_bi_tcxo_ao.hw,
+	[RPMH_LN_BB_CLK1]	= &kalama_ln_bb_clk1.hw,
+	[RPMH_LN_BB_CLK1_A]	= &kalama_ln_bb_clk1_ao.hw,
+	[RPMH_LN_BB_CLK2]	= &kalama_ln_bb_clk2.hw,
+	[RPMH_LN_BB_CLK2_A]	= &kalama_ln_bb_clk2_ao.hw,
+	[RPMH_LN_BB_CLK3]	= &kalama_ln_bb_clk3.hw,
+	[RPMH_LN_BB_CLK3_A]	= &kalama_ln_bb_clk3_ao.hw,
+	[RPMH_RF_CLK1]		= &kalama_rf_clk1.hw,
+	[RPMH_RF_CLK1_A]	= &kalama_rf_clk1_ao.hw,
+	[RPMH_RF_CLK2]		= &kalama_rf_clk2.hw,
+	[RPMH_RF_CLK2_A]	= &kalama_rf_clk2_ao.hw,
+	[RPMH_RF_CLK3]		= &kalama_rf_clk3.hw,
+	[RPMH_RF_CLK3_A]	= &kalama_rf_clk3_ao.hw,
+	[RPMH_RF_CLK4]		= &kalama_rf_clk4.hw,
+	[RPMH_RF_CLK4_A]	= &kalama_rf_clk4_ao.hw,
+	[RPMH_RF_CLK5]		= &kalama_rf_clk5.hw,
+	[RPMH_RF_CLK5_A]	= &kalama_rf_clk5_ao.hw,
+	[RPMH_IPA_CLK]		= &sdm845_ipa.hw,
+};
+
+static const struct clk_rpmh_desc clk_rpmh_kalama = {
+	.clks = kalama_rpmh_clocks,
+	.num_clks = ARRAY_SIZE(kalama_rpmh_clocks),
+};
+
 /* Resource name must match resource id present in cmd-db */
 DEFINE_CLK_RPMH_ARC(sc7280, bi_tcxo, bi_tcxo_ao, "xo.lvl", 0x3, 4);
 
@@ -556,6 +671,97 @@ static const struct clk_rpmh_desc clk_rpmh_sm6350 = {
 	.num_clks = ARRAY_SIZE(sm6350_rpmh_clocks),
 };
 
+/* Resource name must match resource id present in cmd-db */
+DEFINE_CLK_RPMH_ARC(cinder, bi_tcxo, bi_tcxo_ao, "xo.lvl", 0x3, 1);
+
+static struct clk_hw *cinder_rpmh_clocks[] = {
+	[RPMH_CXO_CLK]      = &cinder_bi_tcxo.hw,
+	[RPMH_CXO_CLK_A]    = &cinder_bi_tcxo_ao.hw,
+};
+
+static const struct clk_rpmh_desc clk_rpmh_cinder = {
+	.clks = cinder_rpmh_clocks,
+	.num_clks = ARRAY_SIZE(cinder_rpmh_clocks),
+};
+
+DEFINE_CLK_RPMH_ARC(sdxpinn, bi_tcxo, bi_tcxo_ao, "xo.lvl", 0x3, 4);
+
+static struct clk_hw *sdxpinn_rpmh_clocks[] = {
+	[RPMH_CXO_CLK]		= &sdxpinn_bi_tcxo.hw,
+	[RPMH_CXO_CLK_A]	= &sdxpinn_bi_tcxo_ao.hw,
+	[RPMH_RF_CLK1]		= &sdm845_rf_clk1.hw,
+	[RPMH_RF_CLK1_A]	= &sdm845_rf_clk1_ao.hw,
+	[RPMH_RF_CLK2]		= &sdm845_rf_clk2.hw,
+	[RPMH_RF_CLK2_A]	= &sdm845_rf_clk2_ao.hw,
+	[RPMH_RF_CLK3]		= &sdm845_rf_clk3.hw,
+	[RPMH_RF_CLK3_A]	= &sdm845_rf_clk3_ao.hw,
+	[RPMH_RF_CLK5]		= &waipio_rf_clk5.hw,
+	[RPMH_RF_CLK5_A]	= &waipio_rf_clk5_ao.hw,
+	[RPMH_QPIC_CLK]		= &sdx55_qpic_clk.hw,
+	[RPMH_IPA_CLK]		= &sdx55_ipa.hw,
+};
+
+static const struct clk_rpmh_desc clk_rpmh_sdxpinn = {
+	.clks = sdxpinn_rpmh_clocks,
+	.num_clks = ARRAY_SIZE(sdxpinn_rpmh_clocks),
+};
+
+static struct clk_hw *sdxbaagha_rpmh_clocks[] = {
+	[RPMH_CXO_CLK]		= &sdm845_bi_tcxo.hw,
+	[RPMH_CXO_CLK_A]	= &sdm845_bi_tcxo_ao.hw,
+	[RPMH_RF_CLK1]		= &sdm845_rf_clk1.hw,
+	[RPMH_RF_CLK1_A]	= &sdm845_rf_clk1_ao.hw,
+	[RPMH_QPIC_CLK]		= &sdx55_qpic_clk.hw,
+	[RPMH_IPA_CLK]		= &sdx55_ipa.hw,
+};
+
+static const struct clk_rpmh_desc clk_rpmh_sdxbaagha = {
+	.clks = sdxbaagha_rpmh_clocks,
+	.num_clks = ARRAY_SIZE(sdxbaagha_rpmh_clocks),
+};
+
+static struct clk_hw *lemans_rpmh_clocks[] = {
+	[RPMH_CXO_CLK]		= &sdm845_bi_tcxo.hw,
+	[RPMH_CXO_CLK_A]	= &sdm845_bi_tcxo_ao.hw,
+	[RPMH_LN_BB_CLK1]	= &sm8250_ln_bb_clk1.hw,
+	[RPMH_LN_BB_CLK2]	= &sdm845_ln_bb_clk2.hw,
+	[RPMH_LN_BB_CLK2_A]	= &sdm845_ln_bb_clk2_ao.hw,
+	[RPMH_IPA_CLK]		= &sdm845_ipa.hw,
+	[RPMH_PKA_CLK]		= &sm8350_pka.hw,
+	[RPMH_HWKM_CLK]		= &sm8350_hwkm.hw,
+};
+
+static const struct clk_rpmh_desc clk_rpmh_lemans = {
+	.clks = lemans_rpmh_clocks,
+	.num_clks = ARRAY_SIZE(lemans_rpmh_clocks),
+};
+
+DEFINE_CLK_RPMH_VRM_OPT(crow, ln_bb_clk2, ln_bb_clk2_ao, "clka7", 4);
+DEFINE_CLK_RPMH_VRM_OPT(crow, ln_bb_clk3, ln_bb_clk3_ao, "clka8", 4);
+
+static struct clk_hw *crow_rpmh_clocks[] = {
+	[RPMH_CXO_PAD_CLK]	= &kalama_xo_pad.hw,
+	[RPMH_CXO_PAD_CLK_A]	= &kalama_xo_pad_ao.hw,
+	[RPMH_CXO_CLK]		= &kalama_bi_tcxo.hw,
+	[RPMH_CXO_CLK_A]	= &kalama_bi_tcxo_ao.hw,
+	[RPMH_LN_BB_CLK2]	= &crow_ln_bb_clk2.hw,
+	[RPMH_LN_BB_CLK2_A]	= &crow_ln_bb_clk2_ao.hw,
+	[RPMH_LN_BB_CLK3]	= &crow_ln_bb_clk3.hw,
+	[RPMH_LN_BB_CLK3_A]	= &crow_ln_bb_clk3_ao.hw,
+	[RPMH_RF_CLK1]		= &kalama_rf_clk1.hw,
+	[RPMH_RF_CLK1_A]	= &kalama_rf_clk1_ao.hw,
+	[RPMH_RF_CLK2]		= &kalama_rf_clk2.hw,
+	[RPMH_RF_CLK2_A]	= &kalama_rf_clk2_ao.hw,
+	[RPMH_RF_CLK3]		= &kalama_rf_clk3.hw,
+	[RPMH_RF_CLK3_A]	= &kalama_rf_clk3_ao.hw,
+	[RPMH_IPA_CLK]		= &sdm845_ipa.hw,
+};
+
+static const struct clk_rpmh_desc clk_rpmh_crow = {
+	.clks = crow_rpmh_clocks,
+	.num_clks = ARRAY_SIZE(crow_rpmh_clocks),
+};
+
 static struct clk_hw *of_clk_rpmh_hw_get(struct of_phandle_args *clkspec,
 					 void *data)
 {
@@ -566,6 +772,9 @@ static struct clk_hw *of_clk_rpmh_hw_get(struct of_phandle_args *clkspec,
 		pr_err("%s: invalid index %u\n", __func__, idx);
 		return ERR_PTR(-EINVAL);
 	}
+
+	if (!rpmh->clks[idx])
+		return ERR_PTR(-ENOENT);
 
 	return rpmh->clks[idx];
 }
@@ -594,29 +803,35 @@ static int clk_rpmh_probe(struct platform_device *pdev)
 
 		name = hw_clks[i]->init->name;
 
-		rpmh_clk = to_clk_rpmh(hw_clks[i]);
-		res_addr = cmd_db_read_addr(rpmh_clk->res_name);
-		if (!res_addr) {
-			dev_err(&pdev->dev, "missing RPMh resource address for %s\n",
-				rpmh_clk->res_name);
-			return -ENODEV;
+		if (hw_clks[i]->init->ops != &clk_fixed_factor_ops) {
+			rpmh_clk = to_clk_rpmh(hw_clks[i]);
+			res_addr = cmd_db_read_addr(rpmh_clk->res_name);
+			if (!res_addr) {
+				hw_clks[i] = NULL;
+
+				if (rpmh_clk->optional)
+					continue;
+
+				WARN(1, "clk-rpmh: Missing RPMh resource address for %s\n",
+				     rpmh_clk->res_name);
+				return -ENODEV;
+			}
+
+			data = cmd_db_read_aux_data(rpmh_clk->res_name, &aux_data_len);
+			if (IS_ERR(data)) {
+				ret = PTR_ERR(data);
+				WARN(1, "clk-rpmh: error reading RPMh aux data for %s (%d)\n",
+				     rpmh_clk->res_name, ret);
+				return ret;
+			}
+
+			/* Convert unit from Khz to Hz */
+			if (aux_data_len == sizeof(*data))
+				rpmh_clk->unit = le32_to_cpu(data->unit) * 1000ULL;
+
+			rpmh_clk->res_addr += res_addr;
+			rpmh_clk->dev = &pdev->dev;
 		}
-
-		data = cmd_db_read_aux_data(rpmh_clk->res_name, &aux_data_len);
-		if (IS_ERR(data)) {
-			ret = PTR_ERR(data);
-			dev_err(&pdev->dev,
-				"error reading RPMh aux data for %s (%d)\n",
-				rpmh_clk->res_name, ret);
-			return ret;
-		}
-
-		/* Convert unit from Khz to Hz */
-		if (aux_data_len == sizeof(*data))
-			rpmh_clk->unit = le32_to_cpu(data->unit) * 1000ULL;
-
-		rpmh_clk->res_addr += res_addr;
-		rpmh_clk->dev = &pdev->dev;
 
 		ret = devm_clk_hw_register(&pdev->dev, hw_clks[i]);
 		if (ret) {
@@ -647,7 +862,14 @@ static const struct of_device_id clk_rpmh_match_table[] = {
 	{ .compatible = "qcom,sm8150-rpmh-clk", .data = &clk_rpmh_sm8150},
 	{ .compatible = "qcom,sm8250-rpmh-clk", .data = &clk_rpmh_sm8250},
 	{ .compatible = "qcom,sm8350-rpmh-clk", .data = &clk_rpmh_sm8350},
+	{ .compatible = "qcom,waipio-rpmh-clk", .data = &clk_rpmh_waipio},
 	{ .compatible = "qcom,sc7280-rpmh-clk", .data = &clk_rpmh_sc7280},
+	{ .compatible = "qcom,kalama-rpmh-clk", .data = &clk_rpmh_kalama},
+	{ .compatible = "qcom,cinder-rpmh-clk", .data = &clk_rpmh_cinder},
+	{ .compatible = "qcom,sdxpinn-rpmh-clk", .data = &clk_rpmh_sdxpinn},
+	{ .compatible = "qcom,sdxbaagha-rpmh-clk", .data = &clk_rpmh_sdxbaagha},
+	{ .compatible = "qcom,lemans-rpmh-clk", .data = &clk_rpmh_lemans},
+	{ .compatible = "qcom,crow-rpmh-clk", .data = &clk_rpmh_crow},
 	{ }
 };
 MODULE_DEVICE_TABLE(of, clk_rpmh_match_table);

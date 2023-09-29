@@ -84,6 +84,13 @@ config TEST_POWER
 	help
 	  This driver is used for testing. It's safe to say M here.
 
+config WALLPOWER_CHARGER
+        tristate "Wall power charger stub driver"
+        help
+           This driver enables power supply source type to wallpowered
+           mode. For enabling this psy->type is set to PSY_TYPE_MAINS.
+           It is safe to say M here.
+
 config BATTERY_88PM860X
 	tristate "Marvell 88PM860x battery driver"
 	depends on MFD_88PM860X
@@ -421,6 +428,19 @@ config BATTERY_TWL4030_MADC
 	help
 	  Say Y here to enable this dumb driver for batteries managed
 	  through the TWL4030 MADC.
+
+config QTI_BATTERY_CHARGER
+	tristate "QTI Glink battery charger"
+	depends on QTI_PMIC_GLINK
+	help
+	  Say Y here to enable Qualcomm Technologies, Inc. battery charger
+	  driver which interfaces with the charger firmware running on the
+	  remote subsystem (e.g. DSP) by communicating over PMIC Glink channel
+	  and provides information about the battery, USB and wireless charging
+	  by exposing them as power supply devices.
+
+	  To compile the driver as a module, choose M here: the module will be
+	  called qti_battery_charger.
 
 config CHARGER_88PM860X
 	tristate "Marvell 88PM860x Charger driver"
@@ -848,5 +868,7 @@ config CHARGER_SURFACE
 	  Say M or Y here to include AC status support for 7th-generation
 	  Microsoft Surface devices, i.e. Surface Pro 7, Surface Laptop 3,
 	  Surface Book 3, and Surface Laptop Go.
+
+source "drivers/power/supply/qcom/Kconfig"
 
 endif # POWER_SUPPLY

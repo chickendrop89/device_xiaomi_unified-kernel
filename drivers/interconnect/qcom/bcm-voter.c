@@ -16,6 +16,9 @@
 #include "bcm-voter.h"
 #include "icc-rpmh.h"
 
+#define CREATE_TRACE_POINTS
+#include "trace.h"
+
 static LIST_HEAD(bcm_voters);
 static DEFINE_MUTEX(bcm_voter_lock);
 
@@ -28,6 +31,7 @@ static DEFINE_MUTEX(bcm_voter_lock);
  * @ws_list: list containing bcms that have different wake/sleep votes
  * @voter_node: list of bcm voters
  * @tcs_wait: mask for which buckets require TCS completion
+ * @init: flag to determine when init has completed.
  */
 struct bcm_voter {
 	struct device *dev;
@@ -37,6 +41,7 @@ struct bcm_voter {
 	struct list_head ws_list;
 	struct list_head voter_node;
 	u32 tcs_wait;
+	bool init;
 };
 
 static int cmp_vcd(void *priv, const struct list_head *a, const struct list_head *b)
@@ -58,12 +63,13 @@ static u64 bcm_div(u64 num, u32 base)
 	return num;
 }
 
-static void bcm_aggregate(struct qcom_icc_bcm *bcm)
+static void bcm_aggregate(struct qcom_icc_bcm *bcm, bool init)
 {
 	struct qcom_icc_node *node;
 	size_t i, bucket;
 	u64 agg_avg[QCOM_ICC_NUM_BUCKETS] = {0};
 	u64 agg_peak[QCOM_ICC_NUM_BUCKETS] = {0};
+	bool perf_mode[QCOM_ICC_NUM_BUCKETS] = {0};
 	u64 temp;
 
 	for (bucket = 0; bucket < QCOM_ICC_NUM_BUCKETS; bucket++) {
@@ -76,6 +82,8 @@ static void bcm_aggregate(struct qcom_icc_bcm *bcm)
 			temp = bcm_div(node->max_peak[bucket] * bcm->aux_data.width,
 				       node->buswidth);
 			agg_peak[bucket] = max(agg_peak[bucket], temp);
+
+			perf_mode[bucket] |= node->perf_mode[bucket];
 		}
 
 		temp = agg_avg[bucket] * bcm->vote_scale;
@@ -83,14 +91,37 @@ static void bcm_aggregate(struct qcom_icc_bcm *bcm)
 
 		temp = agg_peak[bucket] * bcm->vote_scale;
 		bcm->vote_y[bucket] = bcm_div(temp, bcm->aux_data.unit);
+
+		if (bcm->enable_mask && (bcm->vote_x[bucket] || bcm->vote_y[bucket])) {
+			bcm->vote_x[bucket] = 0;
+			bcm->vote_y[bucket] = bcm->enable_mask;
+			if (perf_mode[bucket])
+				bcm->vote_y[bucket] |= bcm->perf_mode_mask;
+		}
 	}
 
-	if (bcm->keepalive && bcm->vote_x[QCOM_ICC_BUCKET_AMC] == 0 &&
-	    bcm->vote_y[QCOM_ICC_BUCKET_AMC] == 0) {
-		bcm->vote_x[QCOM_ICC_BUCKET_AMC] = 1;
-		bcm->vote_x[QCOM_ICC_BUCKET_WAKE] = 1;
-		bcm->vote_y[QCOM_ICC_BUCKET_AMC] = 1;
-		bcm->vote_y[QCOM_ICC_BUCKET_WAKE] = 1;
+	if (bcm->keepalive || bcm->keepalive_early) {
+		/*
+		 * Keepalive should normally only be enforced for AMC/WAKE so
+		 * that BCMs are only kept alive when HLOS is active. But early
+		 * during init all clients haven't had a chance to vot yet, and
+		 * some have use cases that persist when HLOS is asleep. So
+		 * during init vote to all sets, including SLEEP.
+		 */
+		if (init) {
+			bcm->vote_x[QCOM_ICC_BUCKET_AMC] = 16000;
+			bcm->vote_x[QCOM_ICC_BUCKET_WAKE] = 16000;
+			bcm->vote_x[QCOM_ICC_BUCKET_SLEEP] = 16000;
+			bcm->vote_y[QCOM_ICC_BUCKET_AMC] = 16000;
+			bcm->vote_y[QCOM_ICC_BUCKET_WAKE] = 16000;
+			bcm->vote_y[QCOM_ICC_BUCKET_SLEEP] = 16000;
+		} else if (bcm->vote_x[QCOM_ICC_BUCKET_AMC] == 0 &&
+			   bcm->vote_y[QCOM_ICC_BUCKET_AMC] == 0) {
+			bcm->vote_x[QCOM_ICC_BUCKET_AMC] = 1;
+			bcm->vote_x[QCOM_ICC_BUCKET_WAKE] = 1;
+			bcm->vote_y[QCOM_ICC_BUCKET_AMC] = 1;
+			bcm->vote_y[QCOM_ICC_BUCKET_WAKE] = 1;
+		}
 	}
 }
 
@@ -211,6 +242,31 @@ struct bcm_voter *of_bcm_voter_get(struct device *dev, const char *name)
 EXPORT_SYMBOL_GPL(of_bcm_voter_get);
 
 /**
+ * qcom_icc_bcm_voter_exist - checks if the bcm voter exists
+ * @voter: voter that needs to checked against available bcm voters
+ *
+ * Returns true incase bcm_voter exists else false
+ */
+static bool qcom_icc_bcm_voter_exist(struct bcm_voter *voter)
+{
+	bool exists = false;
+	struct bcm_voter *temp;
+
+	if (voter) {
+		mutex_lock(&bcm_voter_lock);
+		list_for_each_entry(temp, &bcm_voters, voter_node) {
+			if (temp == voter) {
+				exists = true;
+				break;
+			}
+		}
+		mutex_unlock(&bcm_voter_lock);
+	}
+
+	return exists;
+}
+
+/**
  * qcom_icc_bcm_voter_add - queues up the bcm nodes that require updates
  * @voter: voter that the bcms are being added to
  * @bcm: bcm to add to the commit and wake sleep list
@@ -218,6 +274,9 @@ EXPORT_SYMBOL_GPL(of_bcm_voter_get);
 void qcom_icc_bcm_voter_add(struct bcm_voter *voter, struct qcom_icc_bcm *bcm)
 {
 	if (!voter)
+		return;
+
+	if (!qcom_icc_bcm_voter_exist(voter))
 		return;
 
 	mutex_lock(&voter->lock);
@@ -230,6 +289,29 @@ void qcom_icc_bcm_voter_add(struct bcm_voter *voter, struct qcom_icc_bcm *bcm)
 	mutex_unlock(&voter->lock);
 }
 EXPORT_SYMBOL_GPL(qcom_icc_bcm_voter_add);
+
+static void qcom_icc_bcm_log(struct bcm_voter *voter, enum rpmh_state state,
+			     const struct tcs_cmd *cmd, const u32 *commit_idx)
+{
+	static const char * const rpmh_state[] = {
+			"RPMH_SLEEP_STATE",
+			"RPMH_WAKE_ONLY_STATE",
+			"RPMH_ACTIVE_ONLY_STATE"
+	};
+	int i, count = 0;
+
+	if (!cmd || !commit_idx)
+		return;
+
+	while (commit_idx[count] > 0)
+		count++;
+
+	if (!count)
+		return;
+
+	for (i = 0; i < count; i++)
+		trace_bcm_voter_commit(rpmh_state[state], cmd);
+}
 
 /**
  * qcom_icc_bcm_voter_commit - generates and commits tcs cmds based on bcms
@@ -254,9 +336,12 @@ int qcom_icc_bcm_voter_commit(struct bcm_voter *voter)
 	if (!voter)
 		return 0;
 
+	if (!qcom_icc_bcm_voter_exist(voter))
+		return -ENODEV;
+
 	mutex_lock(&voter->lock);
 	list_for_each_entry(bcm, &voter->commit_list, list)
-		bcm_aggregate(bcm);
+		bcm_aggregate(bcm, voter->init);
 
 	/*
 	 * Pre sort the BCMs based on VCD for ease of generating a command list
@@ -278,9 +363,22 @@ int qcom_icc_bcm_voter_commit(struct bcm_voter *voter)
 
 	rpmh_invalidate(voter->dev);
 
+	qcom_icc_bcm_log(voter, RPMH_ACTIVE_ONLY_STATE, cmds, commit_idx);
 	ret = rpmh_write_batch(voter->dev, RPMH_ACTIVE_ONLY_STATE,
 			       cmds, commit_idx);
-	if (ret) {
+
+	/*
+	 * Ignore -EBUSY for AMC requests, since this can only happen for AMC
+	 * requests when the RSC is in solver mode. We can only be in solver
+	 * mode at the time of request for secondary RSCs (e.g. Display RSC),
+	 * since the primary Apps RSC is only in solver mode while
+	 * entering/exiting power collapse when SW isn't running. The -EBUSY
+	 * response is expected in solver and is a non-issue, since we just
+	 * want the request to apply to the WAKE set in that case instead.
+	 * Interconnect doesn't know when the RSC is in solver, so just always
+	 * send AMC and ignore the harmless error response.
+	 */
+	if (ret && ret != -EBUSY) {
 		pr_err("Error sending AMC RPMH requests (%d)\n", ret);
 		goto out;
 	}
@@ -309,6 +407,7 @@ int qcom_icc_bcm_voter_commit(struct bcm_voter *voter)
 	list_sort(NULL, &voter->commit_list, cmp_vcd);
 
 	tcs_list_gen(voter, QCOM_ICC_BUCKET_WAKE, cmds, commit_idx);
+	qcom_icc_bcm_log(voter, RPMH_WAKE_ONLY_STATE, cmds, commit_idx);
 
 	ret = rpmh_write_batch(voter->dev, RPMH_WAKE_ONLY_STATE, cmds, commit_idx);
 	if (ret) {
@@ -317,6 +416,7 @@ int qcom_icc_bcm_voter_commit(struct bcm_voter *voter)
 	}
 
 	tcs_list_gen(voter, QCOM_ICC_BUCKET_SLEEP, cmds, commit_idx);
+	qcom_icc_bcm_log(voter, RPMH_SLEEP_STATE, cmds, commit_idx);
 
 	ret = rpmh_write_batch(voter->dev, RPMH_SLEEP_STATE, cmds, commit_idx);
 	if (ret) {
@@ -333,6 +433,24 @@ out:
 }
 EXPORT_SYMBOL_GPL(qcom_icc_bcm_voter_commit);
 
+/**
+ * qcom_icc_bcm_voter_clear_init - clear init flag used during boot up
+ * @voter: voter that we need to clear the init flag for
+ */
+void qcom_icc_bcm_voter_clear_init(struct bcm_voter *voter)
+{
+	if (!voter)
+		return;
+
+	if (!qcom_icc_bcm_voter_exist(voter))
+		return;
+
+	mutex_lock(&voter->lock);
+	voter->init = false;
+	mutex_unlock(&voter->lock);
+}
+EXPORT_SYMBOL(qcom_icc_bcm_voter_clear_init);
+
 static int qcom_icc_bcm_voter_probe(struct platform_device *pdev)
 {
 	struct device_node *np = pdev->dev.of_node;
@@ -344,6 +462,7 @@ static int qcom_icc_bcm_voter_probe(struct platform_device *pdev)
 
 	voter->dev = &pdev->dev;
 	voter->np = np;
+	voter->init = true;
 
 	if (of_property_read_u32(np, "qcom,tcs-wait", &voter->tcs_wait))
 		voter->tcs_wait = QCOM_ICC_TAG_ACTIVE_ONLY;
@@ -359,6 +478,23 @@ static int qcom_icc_bcm_voter_probe(struct platform_device *pdev)
 	return 0;
 }
 
+static int qcom_icc_bcm_voter_remove(struct platform_device *pdev)
+{
+	struct device_node *np = pdev->dev.of_node;
+	struct bcm_voter *voter, *temp;
+
+	mutex_lock(&bcm_voter_lock);
+	list_for_each_entry_safe(voter, temp, &bcm_voters, voter_node) {
+		if (voter->np == np) {
+			list_del(&voter->voter_node);
+			break;
+		}
+	}
+	mutex_unlock(&bcm_voter_lock);
+
+	return 0;
+}
+
 static const struct of_device_id bcm_voter_of_match[] = {
 	{ .compatible = "qcom,bcm-voter" },
 	{ }
@@ -367,12 +503,18 @@ MODULE_DEVICE_TABLE(of, bcm_voter_of_match);
 
 static struct platform_driver qcom_icc_bcm_voter_driver = {
 	.probe = qcom_icc_bcm_voter_probe,
+	.remove = qcom_icc_bcm_voter_remove,
 	.driver = {
 		.name		= "bcm_voter",
 		.of_match_table = bcm_voter_of_match,
 	},
 };
-module_platform_driver(qcom_icc_bcm_voter_driver);
+
+static int __init qcom_icc_bcm_voter_driver_init(void)
+{
+	return platform_driver_register(&qcom_icc_bcm_voter_driver);
+}
+module_init(qcom_icc_bcm_voter_driver_init);
 
 MODULE_AUTHOR("David Dai <daidavid1@codeaurora.org>");
 MODULE_DESCRIPTION("Qualcomm BCM Voter interconnect driver");

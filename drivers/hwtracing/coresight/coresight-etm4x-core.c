@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * Copyright (c) 2014, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014, 2021, The Linux Foundation. All rights reserved.
  */
 
 #include <linux/bitops.h>
@@ -26,10 +26,12 @@
 #include <linux/amba/bus.h>
 #include <linux/seq_file.h>
 #include <linux/uaccess.h>
+#include <linux/of.h>
 #include <linux/perf_event.h>
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
 #include <linux/property.h>
+#include <linux/suspend.h>
 
 #include <asm/barrier.h>
 #include <asm/sections.h>
@@ -831,7 +833,7 @@ static void etm4_disable_hw(void *info)
 	/* read back the current counter values */
 	for (i = 0; i < drvdata->nr_cntr; i++) {
 		config->cntr_val[i] =
-			etm4x_relaxed_read32(csa, TRCCNTVRn(i));
+			csdev_access_read32(csa, TRCCNTVRn(i));
 	}
 
 	coresight_disclaim_device_unlocked(csdev);
@@ -1581,7 +1583,11 @@ static int etm4_dying_cpu(unsigned int cpu)
 
 static void etm4_init_trace_id(struct etmv4_drvdata *drvdata)
 {
-	drvdata->trcid = coresight_get_trace_id(drvdata->cpu);
+	int cpu;
+
+	/* Use physical CPU id if it's configurated*/
+	cpu = (drvdata->pcpu < 0) ? drvdata->cpu : drvdata->pcpu;
+	drvdata->trcid = coresight_get_trace_id(cpu);
 }
 
 static int __etm4_cpu_save(struct etmv4_drvdata *drvdata)
@@ -1960,9 +1966,17 @@ static int etm4_probe(struct device *dev, void __iomem *base, u32 etm_pid)
 	if (drvdata->cpu < 0)
 		return drvdata->cpu;
 
+	ret = of_property_read_u32(dev->of_node, "phy-cpu",
+				&drvdata->pcpu);
+	if (ret)
+		drvdata->pcpu = -1;
+
 	init_arg.drvdata = drvdata;
 	init_arg.csa = &desc.access;
 	init_arg.pid = etm_pid;
+
+	if (fwnode_property_present(dev_fwnode(dev), "qcom,skip-power-up"))
+		drvdata->skip_power_up = true;
 
 	if (smp_call_function_single(drvdata->cpu,
 				etm4_init_arch_data,  &init_arg, 1))
@@ -1972,23 +1986,21 @@ static int etm4_probe(struct device *dev, void __iomem *base, u32 etm_pid)
 		return -EINVAL;
 
 	/* TRCPDCR is not accessible with system instructions. */
-	if (!desc.access.io_mem ||
-	    fwnode_property_present(dev_fwnode(dev), "qcom,skip-power-up"))
+	if (!desc.access.io_mem)
 		drvdata->skip_power_up = true;
 
 	major = ETM_ARCH_MAJOR_VERSION(drvdata->arch);
 	minor = ETM_ARCH_MINOR_VERSION(drvdata->arch);
 
 	if (etm4x_is_ete(drvdata)) {
-		type_name = "ete";
+		type_name = "coresight-ete";
 		/* ETE v1 has major version == 0b101. Adjust this for logging.*/
 		major -= 4;
 	} else {
-		type_name = "etm";
+		type_name = "coresight-etm";
 	}
 
-	desc.name = devm_kasprintf(dev, GFP_KERNEL,
-				   "%s%d", type_name, drvdata->cpu);
+	desc.name = devm_kasprintf(dev, GFP_KERNEL, "%s%d", type_name, drvdata->cpu);
 	if (!desc.name)
 		return -ENOMEM;
 
@@ -2074,6 +2086,38 @@ static int etm4_probe_platform_dev(struct platform_device *pdev)
 	pm_runtime_put(&pdev->dev);
 	return ret;
 }
+
+#ifdef CONFIG_DEEPSLEEP
+static int etm_suspend(struct device *dev)
+{
+	struct etmv4_drvdata *drvdata = dev_get_drvdata(dev);
+
+	if (pm_suspend_via_firmware())
+		coresight_disable(drvdata->csdev);
+
+	return 0;
+}
+#endif
+
+#ifdef CONFIG_HIBERNATION
+static int etm_freeze(struct device *dev)
+{
+	struct etmv4_drvdata *drvdata = dev_get_drvdata(dev);
+
+	coresight_disable(drvdata->csdev);
+
+	return 0;
+}
+#endif
+
+static const struct dev_pm_ops etm_dev_pm_ops = {
+#ifdef CONFIG_DEEPSLEEP
+	.suspend = etm_suspend,
+#endif
+#ifdef CONFIG_HIBERNATION
+	.freeze  = etm_freeze,
+#endif
+};
 
 static struct amba_cs_uci_id uci_id_etm4[] = {
 	{
@@ -2165,6 +2209,7 @@ static struct amba_driver etm4x_amba_driver = {
 		.name   = "coresight-etm4x",
 		.owner  = THIS_MODULE,
 		.suppress_bind_attrs = true,
+		.pm	= &etm_dev_pm_ops,
 	},
 	.probe		= etm4_probe_amba,
 	.remove         = etm4_remove_amba,

@@ -125,6 +125,37 @@ static const struct qfprom_soc_compatible_data sc7280_qfprom = {
 	.nkeepout = ARRAY_SIZE(sc7280_qfprom_keepout)
 };
 
+static const struct nvmem_keepout crow_qfprom_keepout[] = {
+	{.start = 0x20, .end = 0x24},
+	{.start = 0x28, .end = 0x30},
+	{.start = 0x34, .end = 0x40},
+	{.start = 0x58, .end = 0x60},
+	{.start = 0x68, .end = 0x70},
+	{.start = 0x78, .end = 0x80},
+	{.start = 0x90, .end = 0x100},
+	{.start = 0x140, .end = 0x200},
+	{.start = 0x240, .end = 0x300},
+	{.start = 0x328, .end = 0x400},
+	{.start = 0x470, .end = 0x500},
+	{.start = 0x550, .end = 0x600},
+	{.start = 0x608, .end = 0x610},
+	{.start = 0x618, .end = 0x630},
+	{.start = 0x638, .end = 0x700},
+	{.start = 0x738, .end = 0x73c},
+	{.start = 0x748, .end = 0x770},
+	{.start = 0x7f8, .end = 0x800},
+	{.start = 0x888, .end = 0xa00},
+	{.start = 0xa40, .end = 0xb00},
+	{.start = 0xb08, .end = 0xb10},
+	{.start = 0xc7c, .end = 0x1000}
+};
+
+static const struct qfprom_soc_compatible_data crow_qfprom = {
+	 .keepout = crow_qfprom_keepout,
+	 .nkeepout = ARRAY_SIZE(crow_qfprom_keepout)
+};
+
+
 /**
  * qfprom_disable_fuse_blowing() - Undo enabling of fuse blowing.
  * @priv: Our driver data.
@@ -323,15 +354,28 @@ static int qfprom_reg_read(void *context,
 {
 	struct qfprom_priv *priv = context;
 	u8 *val = _val;
-	int i = 0, words = bytes;
+	int buf_start, buf_end, index, i = 0;
 	void __iomem *base = priv->qfpcorrected;
+	char *buffer = NULL;
+	u32 read_val;
 
 	if (read_raw_data && priv->qfpraw)
 		base = priv->qfpraw;
+	buf_start = ALIGN_DOWN(reg, 4);
+	buf_end = ALIGN(reg + bytes, 4);
+	buffer = kzalloc(buf_end - buf_start, GFP_KERNEL);
+	if (!buffer) {
+		pr_err("memory allocation failed in %s\n", __func__);
+		return -ENOMEM;
+	}
 
-	while (words--)
-		*val++ = readb(base + reg + i++);
+	for (index = buf_start; index < buf_end; index += 4, i += 4) {
+		read_val = readl_relaxed(base + index);
+		memcpy(buffer + i, &read_val, 4);
+	}
 
+	memcpy(val, buffer + reg % 4, bytes);
+	kfree(buffer);
 	return 0;
 }
 
@@ -454,6 +498,7 @@ static const struct of_device_id qfprom_of_match[] = {
 	{ .compatible = "qcom,qfprom",},
 	{ .compatible = "qcom,sc7180-qfprom", .data = &sc7180_qfprom},
 	{ .compatible = "qcom,sc7280-qfprom", .data = &sc7280_qfprom},
+	{ .compatible = "qcom,crow-qfprom", .data = &crow_qfprom},
 	{/* sentinel */},
 };
 MODULE_DEVICE_TABLE(of, qfprom_of_match);

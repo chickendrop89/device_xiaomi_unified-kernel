@@ -23,6 +23,13 @@
 #include <linux/net_tstamp.h>
 #include <linux/reset.h>
 #include <net/page_pool.h>
+#ifdef CONFIG_MSM_BOOT_TIME_MARKER
+#include <soc/qcom/boot_stats.h>
+#endif
+#include <linux/udp.h>
+#include <linux/if_ether.h>
+#include <linux/if_arp.h>
+#include <linux/icmp.h>
 
 struct stmmac_resources {
 	void __iomem *addr;
@@ -142,10 +149,14 @@ struct stmmac_tc_entry {
 		u8 im:1;
 		u8 nc:1;
 		u8 res1:4;
-		u8 frame_offset;
+		u8 frame_offset:6;
+		u8 res2:2;
 		u8 ok_index;
-		u8 dma_ch_no;
-		u32 res2;
+		u8 giv:1;
+		u8 gid:3;
+		u8 res3:4;
+		u16 dma_ch_no;
+		u16 res4;
 	} __packed val;
 };
 
@@ -190,6 +201,7 @@ struct stmmac_priv {
 	u32 tx_coal_frames[MTL_MAX_TX_QUEUES];
 	u32 tx_coal_timer[MTL_MAX_TX_QUEUES];
 	u32 rx_coal_frames[MTL_MAX_TX_QUEUES];
+	bool tx_coal_timer_disable;
 
 	int tx_coalesce;
 	int hwts_tx_en;
@@ -210,6 +222,7 @@ struct stmmac_priv {
 	struct mac_device_info *hw;
 	int (*hwif_quirks)(struct stmmac_priv *priv);
 	struct mutex lock;
+	struct phy_device *phydev;
 
 	/* RX Queue */
 	struct stmmac_rx_queue rx_queue[MTL_MAX_RX_QUEUES];
@@ -283,6 +296,10 @@ struct stmmac_priv {
 	char int_name_rx_irq[MTL_MAX_TX_QUEUES][IFNAMSIZ + 14];
 	char int_name_tx_irq[MTL_MAX_TX_QUEUES][IFNAMSIZ + 18];
 
+	bool boot_kpi;
+	bool early_eth;
+	bool early_eth_config_set;
+	int current_loopback;
 #ifdef CONFIG_DEBUG_FS
 	struct dentry *dbgfs_dir;
 #endif
@@ -317,6 +334,9 @@ struct stmmac_priv {
 	/* XDP BPF Program */
 	unsigned long *af_xdp_zc_qps;
 	struct bpf_prog *xdp_prog;
+
+	bool phy_irq_enabled;
+	bool en_wol;
 };
 
 enum stmmac_state {
@@ -325,6 +345,9 @@ enum stmmac_state {
 	STMMAC_RESETING,
 	STMMAC_SERVICE_SCHED,
 };
+
+#define GET_MEM_PDEV_DEV (priv->plat->stmmac_emb_smmu_ctx.valid ? \
+			&priv->plat->stmmac_emb_smmu_ctx.smmu_pdev->dev : priv->device)
 
 int stmmac_mdio_unregister(struct net_device *ndev);
 int stmmac_mdio_register(struct net_device *ndev);
@@ -368,9 +391,13 @@ void stmmac_enable_rx_queue(struct stmmac_priv *priv, u32 queue);
 void stmmac_disable_tx_queue(struct stmmac_priv *priv, u32 queue);
 void stmmac_enable_tx_queue(struct stmmac_priv *priv, u32 queue);
 int stmmac_xsk_wakeup(struct net_device *dev, u32 queue, u32 flags);
+u16 icmp_fast_csum(u16 old_csum);
+void swap_ip_port(struct sk_buff *skb, unsigned int eth_type);
+
 struct timespec64 stmmac_calc_tas_basetime(ktime_t old_base_time,
 					   ktime_t current_time,
 					   u64 cycle_time);
+void stmmac_mac2mac_adjust_link(int speed, struct stmmac_priv *priv);
 
 #if IS_ENABLED(CONFIG_STMMAC_SELFTESTS)
 void stmmac_selftest_run(struct net_device *dev,

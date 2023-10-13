@@ -38,8 +38,8 @@ else
 	LINUX_COMPILE_HOST=$KBUILD_BUILD_HOST
 fi
 
-LINUX_COMPILE_BY="sirNewbies"
-LINUX_COMPILE_HOST="noob-server"
+LINUX_COMPILE_BY="ℤℍ𝔸ℕ𝕥𝕖𝕔𝕙™"
+LINUX_COMPILE_HOST="gatotkaca"
 
 UTS_VERSION="#$VERSION"
 CONFIG_FLAGS=""

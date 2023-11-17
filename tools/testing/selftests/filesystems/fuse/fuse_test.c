@@ -2175,6 +2175,7 @@ int main(int argc, char *argv[])
 		MAKE_TEST(bpf_test_lookup_postfilter),
 		MAKE_TEST(flock_test),
 		MAKE_TEST(bpf_test_create_and_remove_bpf),
+
 	};
 #undef MAKE_TEST
 

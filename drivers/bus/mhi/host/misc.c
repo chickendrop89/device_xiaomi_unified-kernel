@@ -401,7 +401,7 @@ void *mhi_controller_get_privdata(struct mhi_controller *mhi_cntrl)
 
 	return mhi_priv->priv_data;
 }
-EXPORT_SYMBOL(mhi_controller_get_privdata);
+EXPORT_SYMBOL_GPL(mhi_controller_get_privdata);
 
 void mhi_controller_set_privdata(struct mhi_controller *mhi_cntrl, void *priv)
 {
@@ -421,7 +421,7 @@ void mhi_controller_set_privdata(struct mhi_controller *mhi_cntrl, void *priv)
 
 	mhi_priv->priv_data = priv;
 }
-EXPORT_SYMBOL(mhi_controller_set_privdata);
+EXPORT_SYMBOL_GPL(mhi_controller_set_privdata);
 
 static struct mhi_controller *find_mhi_controller_by_name(const char *name)
 {
@@ -450,7 +450,7 @@ struct mhi_controller *mhi_bdf_to_controller(u32 domain,
 
 	return find_mhi_controller_by_name(name);
 }
-EXPORT_SYMBOL(mhi_bdf_to_controller);
+EXPORT_SYMBOL_GPL(mhi_bdf_to_controller);
 
 static int mhi_notify_fatal_cb(struct device *dev, void *data)
 {
@@ -504,7 +504,7 @@ int mhi_report_error(struct mhi_controller *mhi_cntrl)
 
 	return 0;
 }
-EXPORT_SYMBOL(mhi_report_error);
+EXPORT_SYMBOL_GPL(mhi_report_error);
 
 int mhi_device_configure(struct mhi_device *mhi_dev,
 			 enum dma_data_direction dir,
@@ -566,7 +566,7 @@ int mhi_device_configure(struct mhi_device *mhi_dev,
 
 	return 0;
 }
-EXPORT_SYMBOL(mhi_device_configure);
+EXPORT_SYMBOL_GPL(mhi_device_configure);
 
 void mhi_set_m2_timeout_ms(struct mhi_controller *mhi_cntrl, u32 timeout)
 {
@@ -586,7 +586,7 @@ void mhi_set_m2_timeout_ms(struct mhi_controller *mhi_cntrl, u32 timeout)
 
 	mhi_priv->m2_timeout_ms = timeout;
 }
-EXPORT_SYMBOL(mhi_set_m2_timeout_ms);
+EXPORT_SYMBOL_GPL(mhi_set_m2_timeout_ms);
 
 int mhi_pm_fast_resume(struct mhi_controller *mhi_cntrl, bool notify_clients)
 {
@@ -674,7 +674,7 @@ int mhi_pm_fast_resume(struct mhi_controller *mhi_cntrl, bool notify_clients)
 
 	return 0;
 }
-EXPORT_SYMBOL(mhi_pm_fast_resume);
+EXPORT_SYMBOL_GPL(mhi_pm_fast_resume);
 
 int mhi_pm_fast_suspend(struct mhi_controller *mhi_cntrl, bool notify_clients)
 {
@@ -789,7 +789,7 @@ error_suspend:
 
 	return ret;
 }
-EXPORT_SYMBOL(mhi_pm_fast_suspend);
+EXPORT_SYMBOL_GPL(mhi_pm_fast_suspend);
 
 static void mhi_process_sfr(struct mhi_controller *mhi_cntrl,
 			    struct file_info *info)
@@ -915,7 +915,7 @@ void mhi_dump_sfr(struct mhi_controller *mhi_cntrl)
 			return;
 	}
 }
-EXPORT_SYMBOL(mhi_dump_sfr);
+EXPORT_SYMBOL_GPL(mhi_dump_sfr);
 
 bool mhi_scan_rddm_cookie(struct mhi_controller *mhi_cntrl, u32 cookie)
 {
@@ -941,7 +941,7 @@ bool mhi_scan_rddm_cookie(struct mhi_controller *mhi_cntrl, u32 cookie)
 
 	return false;
 }
-EXPORT_SYMBOL(mhi_scan_rddm_cookie);
+EXPORT_SYMBOL_GPL(mhi_scan_rddm_cookie);
 
 void mhi_debug_reg_dump(struct mhi_controller *mhi_cntrl)
 {
@@ -1000,7 +1000,7 @@ void mhi_debug_reg_dump(struct mhi_controller *mhi_cntrl)
 			val, ret);
 	}
 }
-EXPORT_SYMBOL(mhi_debug_reg_dump);
+EXPORT_SYMBOL_GPL(mhi_debug_reg_dump);
 
 int mhi_device_get_sync_atomic(struct mhi_device *mhi_dev, int timeout_us,
 			       bool in_panic)
@@ -1062,7 +1062,7 @@ int mhi_device_get_sync_atomic(struct mhi_device *mhi_dev, int timeout_us,
 
 	return 0;
 }
-EXPORT_SYMBOL(mhi_device_get_sync_atomic);
+EXPORT_SYMBOL_GPL(mhi_device_get_sync_atomic);
 
 static int mhi_get_capability_offset(struct mhi_controller *mhi_cntrl,
 				     u32 capability, u32 *offset)
@@ -1173,7 +1173,7 @@ int mhi_controller_setup_timesync(struct mhi_controller *mhi_cntrl,
 
 	return 0;
 }
-EXPORT_SYMBOL(mhi_controller_setup_timesync);
+EXPORT_SYMBOL_GPL(mhi_controller_setup_timesync);
 
 static int mhi_init_timesync(struct mhi_controller *mhi_cntrl,
 			     void __iomem *time_db)
@@ -1511,7 +1511,7 @@ void mhi_controller_set_bw_scale_cb(struct mhi_controller *mhi_cntrl,
 
 	mhi_priv->bw_scale = cb_func;
 }
-EXPORT_SYMBOL(mhi_controller_set_bw_scale_cb);
+EXPORT_SYMBOL_GPL(mhi_controller_set_bw_scale_cb);
 
 void mhi_controller_set_base(struct mhi_controller *mhi_cntrl, phys_addr_t base)
 {
@@ -1520,7 +1520,7 @@ void mhi_controller_set_base(struct mhi_controller *mhi_cntrl, phys_addr_t base)
 
 	mhi_priv->base_addr = base;
 }
-EXPORT_SYMBOL(mhi_controller_set_base);
+EXPORT_SYMBOL_GPL(mhi_controller_set_base);
 
 int mhi_controller_get_base(struct mhi_controller *mhi_cntrl, phys_addr_t *base)
 {
@@ -1534,7 +1534,7 @@ int mhi_controller_get_base(struct mhi_controller *mhi_cntrl, phys_addr_t *base)
 
 	return -EINVAL;
 }
-EXPORT_SYMBOL(mhi_controller_get_base);
+EXPORT_SYMBOL_GPL(mhi_controller_get_base);
 
 u32 mhi_controller_get_numeric_id(struct mhi_controller *mhi_cntrl)
 {
@@ -1543,7 +1543,7 @@ u32 mhi_controller_get_numeric_id(struct mhi_controller *mhi_cntrl)
 
 	return mhi_priv->numeric_id;
 }
-EXPORT_SYMBOL(mhi_controller_get_numeric_id);
+EXPORT_SYMBOL_GPL(mhi_controller_get_numeric_id);
 
 int mhi_get_channel_db_base(struct mhi_device *mhi_dev, phys_addr_t *value)
 {
@@ -1566,7 +1566,7 @@ int mhi_get_channel_db_base(struct mhi_device *mhi_dev, phys_addr_t *value)
 
 	return ret;
 }
-EXPORT_SYMBOL(mhi_get_channel_db_base);
+EXPORT_SYMBOL_GPL(mhi_get_channel_db_base);
 
 int mhi_get_event_ring_db_base(struct mhi_device *mhi_dev, phys_addr_t *value)
 {
@@ -1589,7 +1589,7 @@ int mhi_get_event_ring_db_base(struct mhi_device *mhi_dev, phys_addr_t *value)
 
 	return ret;
 }
-EXPORT_SYMBOL(mhi_get_event_ring_db_base);
+EXPORT_SYMBOL_GPL(mhi_get_event_ring_db_base);
 
 struct mhi_device *mhi_get_device_for_channel(struct mhi_controller *mhi_cntrl,
 					      u32 channel)
@@ -1599,7 +1599,7 @@ struct mhi_device *mhi_get_device_for_channel(struct mhi_controller *mhi_cntrl,
 
 	return mhi_cntrl->mhi_chan[channel].mhi_dev;
 }
-EXPORT_SYMBOL(mhi_get_device_for_channel);
+EXPORT_SYMBOL_GPL(mhi_get_device_for_channel);
 
 void mhi_controller_set_loglevel(struct mhi_controller *mhi_cntrl,
 				 enum MHI_DEBUG_LEVEL lvl)
@@ -1609,7 +1609,7 @@ void mhi_controller_set_loglevel(struct mhi_controller *mhi_cntrl,
 
 	mhi_priv->log_lvl = lvl;
 }
-EXPORT_SYMBOL(mhi_controller_set_loglevel);
+EXPORT_SYMBOL_GPL(mhi_controller_set_loglevel);
 
 #if !IS_ENABLED(CONFIG_MHI_DTR)
 long mhi_device_ioctl(struct mhi_device *mhi_dev, unsigned int cmd,
@@ -1617,7 +1617,7 @@ long mhi_device_ioctl(struct mhi_device *mhi_dev, unsigned int cmd,
 {
 	return -EIO;
 }
-EXPORT_SYMBOL(mhi_device_ioctl);
+EXPORT_SYMBOL_GPL(mhi_device_ioctl);
 #endif
 
 int mhi_controller_set_sfr_support(struct mhi_controller *mhi_cntrl, size_t len)
@@ -1639,7 +1639,7 @@ int mhi_controller_set_sfr_support(struct mhi_controller *mhi_cntrl, size_t len)
 
 	return 0;
 }
-EXPORT_SYMBOL(mhi_controller_set_sfr_support);
+EXPORT_SYMBOL_GPL(mhi_controller_set_sfr_support);
 
 void mhi_misc_mission_mode(struct mhi_controller *mhi_cntrl)
 {
@@ -1821,7 +1821,7 @@ error_unlock:
 	mutex_unlock(&mhi_tsync->mutex);
 	return ret;
 }
-EXPORT_SYMBOL(mhi_get_remote_time_sync);
+EXPORT_SYMBOL_GPL(mhi_get_remote_time_sync);
 
 int mhi_get_remote_time(struct mhi_device *mhi_dev,
 			u32 sequence,
@@ -1924,7 +1924,7 @@ error_unlock:
 	mutex_unlock(&mhi_tsync->mutex);
 	return ret;
 }
-EXPORT_SYMBOL(mhi_get_remote_time);
+EXPORT_SYMBOL_GPL(mhi_get_remote_time);
 
 /* MHI host reset request*/
 int mhi_force_reset(struct mhi_controller *mhi_cntrl)
@@ -1942,7 +1942,7 @@ int mhi_force_reset(struct mhi_controller *mhi_cntrl)
 	mhi_soc_reset(mhi_cntrl);
 	return mhi_rddm_download_status(mhi_cntrl);
 }
-EXPORT_SYMBOL(mhi_force_reset);
+EXPORT_SYMBOL_GPL(mhi_force_reset);
 
 /* Get SoC info before registering mhi controller */
 int mhi_get_soc_info(struct mhi_controller *mhi_cntrl)
@@ -1968,4 +1968,4 @@ int mhi_get_soc_info(struct mhi_controller *mhi_cntrl)
 done:
 	return ret;
 }
-EXPORT_SYMBOL(mhi_get_soc_info);
+EXPORT_SYMBOL_GPL(mhi_get_soc_info);

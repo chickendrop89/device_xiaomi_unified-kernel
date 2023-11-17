@@ -1881,13 +1881,13 @@ int mhi_stop_transfer(struct mhi_device *mhi_dev)
 {
 	return mhi_update_transfer_state(mhi_dev, MHI_CH_STATE_TYPE_STOP);
 }
-EXPORT_SYMBOL(mhi_stop_transfer);
+EXPORT_SYMBOL_GPL(mhi_stop_transfer);
 
 int mhi_start_transfer(struct mhi_device *mhi_dev)
 {
 	return mhi_update_transfer_state(mhi_dev, MHI_CH_STATE_TYPE_START);
 }
-EXPORT_SYMBOL(mhi_start_transfer);
+EXPORT_SYMBOL_GPL(mhi_start_transfer);
 
 int mhi_poll(struct mhi_device *mhi_dev, u32 budget)
 {

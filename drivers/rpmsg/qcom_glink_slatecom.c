@@ -156,6 +156,7 @@ struct slatecom_fifo_fill {
  * @ilc:	ipc logging context reference
  * @sent_read_notify:	flag to check cmd sent or not
  * @tx_counter: Tx packet Counter
+ * @rx_counter: Rx packet Counter
  */
 struct glink_slatecom {
 	struct device *dev;
@@ -193,6 +194,7 @@ struct glink_slatecom {
 	void *slatecom_handle;
 	bool water_mark_reached;
 	uint32_t tx_counter;
+	uint32_t rx_counter;
 };
 
 enum {
@@ -1016,7 +1018,7 @@ static void glink_slatecom_send_close_req(struct glink_slatecom *glink,
 		ret = wait_for_completion_timeout(&channel->close_ack, 2 * HZ);
 		if (!ret)
 			GLINK_ERR(glink, "rx_close_ack timedout[%d]:[%d]\n",
-				 channel->rcid, channel->lcid);
+				 channel->lcid, channel->rcid);
 	}
 }
 
@@ -1359,6 +1361,7 @@ static void glink_slatecom_rx_close_ack(struct glink_slatecom *glink,
 	idr_remove(&glink->lcids, channel->lcid);
 	channel->lcid = 0;
 	mutex_unlock(&glink->idr_lock);
+	complete_all(&channel->close_ack);
 
 	/* Decouple the potential rpdev from the channel */
 	if (channel->rpdev) {
@@ -1368,7 +1371,6 @@ static void glink_slatecom_rx_close_ack(struct glink_slatecom *glink,
 
 		rpmsg_unregister_device(glink->dev, &chinfo);
 	}
-	complete_all(&channel->close_ack);
 	channel->rpdev = NULL;
 
 	kref_put(&channel->refcount, glink_slatecom_channel_release);
@@ -1997,6 +1999,10 @@ static int glink_slatecom_process_cmd(struct glink_slatecom *glink, void *rx_dat
 		param2 = le32_to_cpu(msg->param2);
 		param3 = le32_to_cpu(msg->param3);
 		param4 = le32_to_cpu(msg->param4);
+		glink->rx_counter = glink->rx_counter + 1;
+
+		GLINK_INFO(glink, "Packet count local %d remote %d\n",
+					glink->rx_counter, param3);
 
 		switch (cmd) {
 		case SLATECOM_CMD_VERSION:

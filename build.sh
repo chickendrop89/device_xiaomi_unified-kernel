@@ -20,12 +20,12 @@ ANYKERNEL_BRANCH="topaz"
 # Costumize
 KERNEL="Pringgodani"
 RELEASE_VERSION="2.1"
-TOPAZ_DEVICE="Topaz-Tapas"
-XUN_DEVICE="Xun"
-TOPAZ_KERNELNAME="${KERNEL}-${RELEASE_VERSION}-${TOPAZ_DEVICE}-$(TZ=Asia/Jakarta date +%y%m%d-%H%M)"
-XUN_KERNELNAME="${KERNEL}-${RELEASE_VERSION}-${XUN_DEVICE}-$(TZ=Asia/Jakarta date +%y%m%d-%H%M)"
-FINAL_KERNEL_ZIP="${TOPAZ_KERNELNAME}.zip"
-FINAL_KERNEL_IMG="${XUN_KERNELNAME}.img"
+DEVICE="Topaz-Tapas-Xun"
+BENGAL_DEVICE="Bengal"
+KERNELNAME="${KERNEL}-${RELEASE_VERSION}-${DEVICE}-$(TZ=Asia/Jakarta date +%y%m%d-%H%M)"
+BENGAL_KERNELNAME="${KERNEL}-${RELEASE_VERSION}-${BENGAL_DEVICE}-$(TZ=Asia/Jakarta date +%y%m%d-%H%M)"
+FINAL_KERNEL_ZIP="${KERNELNAME}.zip"
+FINAL_KERNEL_IMG="${BENGAL_KERNELNAME}.img"
 
 function clean() {
 rm -rf "$HOME"/kernel
@@ -70,7 +70,7 @@ tg_cast() {
 # Starting
 tg_cast "<b>STARTING KERNEL BUILD</b>" \
     "Docker OS: ${DISTRO}" \
-    "Device: ${TOPAZ_DEVICE}" \
+    "Device: ${DEVICE}" \
     "Kernel Version : ${KERVER}" \
     "Kernel Name: <code>${KERNEL}</code>" \
     "Release Version: ${RELEASE_VERSION}" \
@@ -86,7 +86,7 @@ LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
         END=$(TZ=Asia/Jakarta date +"%s")
         DIFF=$(( END - START ))
         echo -e "Kernel compilation failed, See buildlog to fix errors"
-        tg_cast "Build for ${TOPAZ_DEVICE} <b>failed</b> in $((DIFF / 60)) minute(s) and $((DIFF % 60)) second(s)! Check Instance for errors @zh4ntech"
+        tg_cast "Build for ${DEVICE} <b>failed</b> in $((DIFF / 60)) minute(s) and $((DIFF % 60)) second(s)! Check Instance for errors @zh4ntech"
         exit 1
     fi
 
@@ -115,10 +115,10 @@ echo "Kernel uploaded to telegram..."
 
 END=$(TZ=Asia/Jakarta date +"%s")
 DIFF=$(( END - START ))
-tg_cast "Build for ${TOPAZ_DEVICE} with ${COMPILER_STRING} <b>succeed</b> took $((DIFF / 60)) minute(s) and $((DIFF % 60)) second(s)! by @zh4ntech"
+tg_cast "Build for ${DEVICE} with ${COMPILER_STRING} <b>succeed</b> took $((DIFF / 60)) minute(s) and $((DIFF % 60)) second(s)! by @zh4ntech"
 
-scp "$HOME"/kernel/$FINAL_KERNEL_IMG zhantech@frs.sourceforge.net:/home/frs/project/zhantech/Pringgodani/xun
-scp "$HOME"/kernel/$FINAL_KERNEL_ZIP zhantech@frs.sourceforge.net:/home/frs/project/zhantech/Pringgodani/topaz
+scp "$HOME"/kernel/$FINAL_KERNEL_IMG zhantech@frs.sourceforge.net:/home/frs/project/zhantech/Pringgodani/bengal
+scp "$HOME"/kernel/$FINAL_KERNEL_ZIP zhantech@frs.sourceforge.net:/home/frs/project/zhantech/Pringgodani/topaz-xun
 
 echo "Kernel uploaded to sourceforge..."
 

@@ -4,6 +4,7 @@
 #
 
 WORK_DIR="${PWD}"
+KERNEL_DIR="$(basename $PWD)"
 DISTRO=$(source /etc/os-release && echo ${NAME})
 KERVER=$(make kernelversion)
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
@@ -79,7 +80,7 @@ tg_cast "<b>STARTING KERNEL BUILD</b>" \
     "Last Commit : <code>$COMMIT_HEAD</code>"
 START=$(TZ=Asia/Jakarta date +"%s")
 
-LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
+LTO=thin BUILD_CONFIG=$KERNEL_DIR/build.config.gki.aarch64 build/build.sh
 
 # Check If compilation is success
     if ! [ -f "${OUT_DIR}"/Image ]; then

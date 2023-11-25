@@ -1,4 +1,0 @@
-[submodule "drivers/kernelsu"]
-	path = drivers/kernelsu
-	url = https://github.com/tiann/KernelSU/
-        branch = main

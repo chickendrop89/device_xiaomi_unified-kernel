@@ -20,7 +20,7 @@ ANYKERNEL_BRANCH="topaz"
 
 # Costumize
 KERNEL="Pringgodani"
-RELEASE_VERSION="2.1"
+RELEASE_VERSION="2.2"
 DEVICE="Topaz-Tapas-Xun"
 BENGAL_DEVICE="Bengal"
 KERNELNAME="${KERNEL}-${RELEASE_VERSION}-${BRANCH}-${DEVICE}-$(TZ=Asia/Jakarta date +%y%m%d)"

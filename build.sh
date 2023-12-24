@@ -10,8 +10,8 @@ KERVER=$(make kernelversion)
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 COMMIT_HEAD=$(git log --oneline -1)
 ANYKERNEL3_DIR="${HOME}"/kernel/anykernel
-COMPILER_STRING=clang-r498229b
-TC_DIR=prebuilts/clang/host/linux-x86/clang-r498229b
+COMPILER_STRING=clang-r510928
+TC_DIR=prebuilts/clang/host/linux-x86/clang-r510928
 OUT_DIR=out/android13-5.15/dist
 
 # Repo URL
@@ -37,7 +37,7 @@ rm -rf out
 function cloning() {
 if ! [ -d "${TC_DIR}" ]; then
 echo "Clang not found! Cloning to ${TC_DIR}..."
-if ! git clone --depth=1 https://gitlab.com/prebuilts_clang_host_linux-x86/clang-r498229b.git ${TC_DIR}; then
+if ! git clone --depth=1 https://gitlab.com/kibria5/prebuilts_clang_host_linux-x86_clang-r510928 ${TC_DIR}; then
 echo "Cloning failed! Aborting..."
 exit 1
 fi

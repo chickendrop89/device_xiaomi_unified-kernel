@@ -10,8 +10,8 @@ KERVER=$(make kernelversion)
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 COMMIT_HEAD=$(git log --oneline -1)
 ANYKERNEL3_DIR="${HOME}"/kernel/anykernel
-COMPILER_STRING=clang-r510928
-TC_DIR=prebuilts/clang/host/linux-x86/clang-r510928
+CLANG_VERSION=clang-r510928
+TC_DIR=prebuilts/clang/host/linux-x86
 OUT_DIR=out/android13-5.15/dist
 
 # Repo URL
@@ -35,12 +35,15 @@ rm -rf out
 }
 
 function cloning() {
-if ! [ -d "${TC_DIR}" ]; then
+if ! [ -d "${TC_DIR}"/"${CLANG_VERSION}" ]; then
 echo "Clang not found! Cloning to ${TC_DIR}..."
-if ! git clone --depth=1 https://gitlab.com/kibria5/prebuilts_clang_host_linux-x86_clang-r510928 ${TC_DIR}; then
-echo "Cloning failed! Aborting..."
-exit 1
-fi
+cd "${TC_DIR}"
+mkdir ${CLANG_VERSION}
+cd ${CLANG_VERSION} || exit
+wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/${CLANG_VERSION}.tar.gz
+tar -xf ${CLANG_VERSION}.tar.gz
+cd "${WORK_DIR}"
+cd ..
 fi
 
 # Telegram
@@ -75,11 +78,10 @@ tg_cast "<b>STARTING KERNEL BUILD</b>" \
     "Kernel Version : ${KERVER}" \
     "Kernel Name: <code>${KERNEL}</code>" \
     "Release Version: ${RELEASE_VERSION}" \
-    "Toolchain: ${COMPILER_STRING}" \
+    "Toolchain: ${CLANG_VERSION}" \
     "Branch : <code>$BRANCH</code>" \
     "Last Commit : <code>$COMMIT_HEAD</code>"
 START=$(TZ=Asia/Jakarta date +"%s")
-
 LTO=thin BUILD_CONFIG=$KERNEL_DIR/build.config.gki.aarch64 build/build.sh
 
 # Check If compilation is success
@@ -116,7 +118,7 @@ echo "Kernel uploaded to telegram..."
 
 END=$(TZ=Asia/Jakarta date +"%s")
 DIFF=$(( END - START ))
-tg_cast "Build for ${DEVICE} with ${COMPILER_STRING} <b>succeed</b> took $((DIFF / 60)) minute(s) and $((DIFF % 60)) second(s)! by @zh4ntech"
+tg_cast "Build for ${DEVICE} with ${CLANG_VERSION} <b>succeed</b> took $((DIFF / 60)) minute(s) and $((DIFF % 60)) second(s)! by @zh4ntech"
 
 scp "$HOME"/kernel/$FINAL_KERNEL_IMG zhantech@frs.sourceforge.net:/home/frs/project/zhantech/Pringgodani/bengal
 scp "$HOME"/kernel/$FINAL_KERNEL_ZIP zhantech@frs.sourceforge.net:/home/frs/project/zhantech/Pringgodani/topaz-xun

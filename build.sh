@@ -145,6 +145,12 @@ compile_kernel
     echo ".     Ziping Kernel      ."
     echo ".........................."
 ziping
+while true; do
+
+read -p "Do you want to upload kernel? (y/n) " yn
+
+case $yn in 
+	[yY] )
     echo ".........................."
     echo ".     Uploading Kernel   ."
     echo ".........................."
@@ -152,3 +158,13 @@ upload
     echo ".........................."
     echo ".     Build Finished     ."
     echo ".........................."
+		break;;
+	[nN] )
+    echo ".........................."
+    echo ".     Build Finished     ."
+    echo ".........................."
+		exit;;
+	* ) echo invalid response;;
+esac
+
+done

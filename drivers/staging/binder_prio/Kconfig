@@ -1,0 +1,3 @@
+config BINDER_PRIO
+	tristate "Binder priority driver"
+	default n

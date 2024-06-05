@@ -1,5 +1,3 @@
 mm/zsmalloc.ko
 drivers/block/zram/zram.ko
-drivers/input/fingerprint/fpc/fpc1020_platform_tee.ko
-drivers/input/fingerprint/goodix/goodix_fp.ko
 drivers/cpufreq/cpumaxfreq.ko

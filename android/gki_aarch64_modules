@@ -1,3 +1,2 @@
 mm/zsmalloc.ko
 drivers/block/zram/zram.ko
-drivers/cpufreq/cpumaxfreq.ko

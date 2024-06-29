@@ -17,7 +17,6 @@ CONFIG_RCU_FAST_NO_HZ=y
 CONFIG_RCU_BOOST=y
 CONFIG_RCU_NOCB_CPU=y
 CONFIG_RCU_LAZY=y
-CONFIG_RCU_LAZY_DEFAULT_OFF=y
 CONFIG_IKCONFIG=y
 CONFIG_IKCONFIG_PROC=y
 CONFIG_IKHEADERS=y
@@ -72,7 +71,7 @@ CONFIG_SETEND_EMULATION=y
 CONFIG_ARM64_MPAM=y
 CONFIG_RANDOMIZE_BASE=y
 # CONFIG_RANDOMIZE_MODULE_REGION_FULL is not set
-CONFIG_CMDLINE="stack_depot_disable=on kasan.stacktrace=off kvm-arm.mode=protected cgroup_disable=pressure"
+CONFIG_CMDLINE="stack_depot_disable=on kasan.stacktrace=off kvm-arm.mode=protected cgroup_disable=pressure rcu_nocbs=all"
 CONFIG_CMDLINE_EXTEND=y
 # CONFIG_DMI is not set
 CONFIG_HIBERNATION=y

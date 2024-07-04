@@ -39,7 +39,7 @@ else
 fi
 
 LINUX_COMPILE_BY="chickendrop89"
-LINUX_COMPILE_HOST="zilla"
+LINUX_COMPILE_HOST="telegram"
 
 UTS_VERSION="#$VERSION"
 CONFIG_FLAGS=""

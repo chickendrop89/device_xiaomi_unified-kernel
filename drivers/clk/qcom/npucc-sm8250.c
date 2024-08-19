@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2018-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/clk-provider.h>
@@ -22,12 +22,20 @@
 
 static DEFINE_VDD_REGULATORS(vdd_cx, VDD_HIGH_L1 + 1, 1, vdd_corner);
 
+#define HM0_CRC_SID_FSM_CTRL		0x11A0
+#define HM1_CRC_SID_FSM_CTRL		0x11B0
+#define CRC_SID_FSM_CTRL_SETTING	0x800000
+#define HM0_CRC_MND_CFG			0x11A4
+#define HM1_CRC_MND_CFG			0x11B4
+#define CRC_MND_CFG_SETTING		0x15011
+
 static struct clk_vdd_class *npu_cc_sm8250_regulators[] = {
 	&vdd_cx,
 };
 
 enum {
 	P_BI_TCXO,
+	P_NPU_CC_CRC_DIV,
 	P_GCC_NPU_GPLL0_CLK,
 	P_GCC_NPU_GPLL0_DIV_CLK,
 	P_NPU_CC_PLL0_OUT_EVEN,
@@ -40,7 +48,17 @@ static const struct pll_vco lucid_vco[] = {
 	{ 249600000, 2000000000, 0 },
 };
 
-static const struct alpha_pll_config npu_cc_pll0_config = {
+static const u32 crc_reg_offset[] = {
+	HM0_CRC_MND_CFG, HM0_CRC_SID_FSM_CTRL,
+	HM1_CRC_MND_CFG, HM1_CRC_SID_FSM_CTRL,
+};
+
+static const u32 crc_reg_val[] = {
+	CRC_MND_CFG_SETTING, CRC_SID_FSM_CTRL_SETTING,
+	CRC_MND_CFG_SETTING, CRC_SID_FSM_CTRL_SETTING,
+};
+
+static struct alpha_pll_config npu_cc_pll0_config = {
 	.l = 0x1F,
 	.cal_l = 0x44,
 	.alpha = 0x4000,
@@ -50,6 +68,9 @@ static const struct alpha_pll_config npu_cc_pll0_config = {
 	.user_ctl_val = 0x00000000,
 	.user_ctl_hi_val = 0x00000805,
 	.user_ctl_hi1_val = 0x00000000,
+	.custom_reg_offset = crc_reg_offset,
+	.custom_reg_val = crc_reg_val,
+	.num_custom_reg = ARRAY_SIZE(crc_reg_offset),
 };
 
 static struct clk_alpha_pll npu_cc_pll0 = {
@@ -57,6 +78,7 @@ static struct clk_alpha_pll npu_cc_pll0 = {
 	.vco_table = lucid_vco,
 	.num_vco = ARRAY_SIZE(lucid_vco),
 	.regs = clk_alpha_pll_regs[CLK_ALPHA_PLL_TYPE_LUCID],
+	.config = &npu_cc_pll0_config,
 	.clkr = {
 		.hw.init = &(const struct clk_init_data){
 			.name = "npu_cc_pll0",
@@ -79,7 +101,21 @@ static struct clk_alpha_pll npu_cc_pll0 = {
 	},
 };
 
-static const struct alpha_pll_config npu_cc_pll1_config = {
+static struct clk_fixed_factor npu_cc_crc_div = {
+	.mult = 1,
+	.div = 2,
+	.hw.init = &(struct clk_init_data){
+		.name = "npu_cc_crc_div",
+		.parent_hws = (const struct clk_hw*[]){
+			&npu_cc_pll0.clkr.hw,
+		},
+		.num_parents = 1,
+		.flags = CLK_SET_RATE_PARENT,
+		.ops = &clk_fixed_factor_ops,
+	},
+};
+
+static struct alpha_pll_config npu_cc_pll1_config = {
 	.l = 0x4E,
 	.cal_l = 0x44,
 	.alpha = 0x2000,
@@ -96,6 +132,7 @@ static struct clk_alpha_pll npu_cc_pll1 = {
 	.vco_table = lucid_vco,
 	.num_vco = ARRAY_SIZE(lucid_vco),
 	.regs = clk_alpha_pll_regs[CLK_ALPHA_PLL_TYPE_LUCID],
+	.config = &npu_cc_pll1_config,
 	.clkr = {
 		.hw.init = &(const struct clk_init_data){
 			.name = "npu_cc_pll1",
@@ -118,7 +155,7 @@ static struct clk_alpha_pll npu_cc_pll1 = {
 	},
 };
 
-static const struct alpha_pll_config npu_q6ss_pll_config = {
+static struct alpha_pll_config npu_q6ss_pll_config = {
 	.l = 0xF,
 	.cal_l = 0x44,
 	.alpha = 0xA000,
@@ -135,6 +172,7 @@ static struct clk_alpha_pll npu_q6ss_pll = {
 	.vco_table = lucid_vco,
 	.num_vco = ARRAY_SIZE(lucid_vco),
 	.regs = clk_alpha_pll_regs[CLK_ALPHA_PLL_TYPE_LUCID],
+	.config = &npu_q6ss_pll_config,
 	.clkr = {
 		.hw.init = &(const struct clk_init_data){
 			.name = "npu_q6ss_pll",
@@ -173,6 +211,22 @@ static const struct clk_parent_data npu_cc_parent_data_0[] = {
 	{ .fw_name = "gcc_npu_gpll0_div_clk" },
 };
 
+static const struct parent_map npu_cc_parent_map_0_crc[] = {
+	{ P_BI_TCXO, 0 },
+	{ P_NPU_CC_PLL1_OUT_EVEN, 1 },
+	{ P_NPU_CC_CRC_DIV, 2 },
+	{ P_GCC_NPU_GPLL0_CLK, 4 },
+	{ P_GCC_NPU_GPLL0_DIV_CLK, 5 },
+};
+
+static const struct clk_parent_data npu_cc_parent_data_0_crc[] = {
+	{ .fw_name = "bi_tcxo" },
+	{ .hw = &npu_cc_pll1.clkr.hw },
+	{ .hw = &npu_cc_crc_div.hw },
+	{ .fw_name = "gcc_npu_gpll0_clk" },
+	{ .fw_name = "gcc_npu_gpll0_div_clk" },
+};
+
 static const struct parent_map npu_cc_parent_map_1[] = {
 	{ P_BI_TCXO, 0 },
 };
@@ -194,12 +248,12 @@ static const struct clk_parent_data npu_cc_parent_data_2[] = {
 };
 
 static const struct freq_tbl ftbl_npu_cc_cal_hm0_clk_src[] = {
-	F(300000000, P_NPU_CC_PLL0_OUT_EVEN, 1, 0, 0),
-	F(406000000, P_NPU_CC_PLL0_OUT_EVEN, 1, 0, 0),
-	F(533000000, P_NPU_CC_PLL0_OUT_EVEN, 1, 0, 0),
-	F(730000000, P_NPU_CC_PLL0_OUT_EVEN, 1, 0, 0),
-	F(920000000, P_NPU_CC_PLL0_OUT_EVEN, 1, 0, 0),
-	F(1000000000, P_NPU_CC_PLL0_OUT_EVEN, 1, 0, 0),
+	F(300000000, P_NPU_CC_CRC_DIV, 1, 0, 0),
+	F(406000000, P_NPU_CC_CRC_DIV, 1, 0, 0),
+	F(533000000, P_NPU_CC_CRC_DIV, 1, 0, 0),
+	F(730000000, P_NPU_CC_CRC_DIV, 1, 0, 0),
+	F(920000000, P_NPU_CC_CRC_DIV, 1, 0, 0),
+	F(1000000000, P_NPU_CC_CRC_DIV, 1, 0, 0),
 	{ }
 };
 
@@ -207,14 +261,14 @@ static struct clk_rcg2 npu_cc_cal_hm0_clk_src = {
 	.cmd_rcgr = 0x181100,
 	.mnd_width = 0,
 	.hid_width = 5,
-	.parent_map = npu_cc_parent_map_0,
+	.parent_map = npu_cc_parent_map_0_crc,
 	.freq_tbl = ftbl_npu_cc_cal_hm0_clk_src,
 	.enable_safe_config = true,
 	.flags = HW_CLK_CTRL_MODE,
 	.clkr.hw.init = &(const struct clk_init_data){
 		.name = "npu_cc_cal_hm0_clk_src",
-		.parent_data = npu_cc_parent_data_0,
-		.num_parents = ARRAY_SIZE(npu_cc_parent_data_0),
+		.parent_data = npu_cc_parent_data_0_crc,
+		.num_parents = ARRAY_SIZE(npu_cc_parent_data_0_crc),
 		.flags = CLK_SET_RATE_PARENT,
 		.ops = &clk_rcg2_ops,
 	},
@@ -234,14 +288,14 @@ static struct clk_rcg2 npu_cc_cal_hm1_clk_src = {
 	.cmd_rcgr = 0x181140,
 	.mnd_width = 0,
 	.hid_width = 5,
-	.parent_map = npu_cc_parent_map_0,
+	.parent_map = npu_cc_parent_map_0_crc,
 	.freq_tbl = ftbl_npu_cc_cal_hm0_clk_src,
 	.enable_safe_config = true,
 	.flags = HW_CLK_CTRL_MODE,
 	.clkr.hw.init = &(const struct clk_init_data){
 		.name = "npu_cc_cal_hm1_clk_src",
-		.parent_data = npu_cc_parent_data_0,
-		.num_parents = ARRAY_SIZE(npu_cc_parent_data_0),
+		.parent_data = npu_cc_parent_data_0_crc,
+		.num_parents = ARRAY_SIZE(npu_cc_parent_data_0_crc),
 		.flags = CLK_SET_RATE_PARENT,
 		.ops = &clk_rcg2_ops,
 	},
@@ -914,6 +968,10 @@ static struct clk_branch npu_cc_s2p_clk = {
 	},
 };
 
+static struct clk_hw *npu_cc_sm8250_hws[] = {
+	&npu_cc_crc_div.hw,
+};
+
 static struct clk_regmap *npu_cc_sm8250_clocks[] = {
 	[NPU_CC_ATB_CLK] = &npu_cc_atb_clk.clkr,
 	[NPU_CC_BTO_CORE_CLK] = &npu_cc_bto_core_clk.clkr,
@@ -963,6 +1021,9 @@ static const struct qcom_reset_map npu_cc_sm8250_resets[] = {
 	[NPU_CC_CAL_HM1_BCR] = { 0x181130 },
 	[NPU_CC_CORE_BCR] = { 0x181000 },
 	[NPU_CC_DSP_BCR] = { 0x181200 },
+	[NPU_CC_DPM_TEMP_CLK_ARES] = { 0x1810c4, 2 },
+	[NPU_CC_LLM_CURR_CLK_ARES] = { 0x1810d4, 2 },
+	[NPU_CC_LLM_TEMP_CLK_ARES] = { 0x1810c8, 2 },
 };
 
 static const struct regmap_config npu_cc_sm8250_regmap_config = {
@@ -981,6 +1042,8 @@ static const struct qcom_cc_desc npu_cc_sm8250_desc = {
 	.num_resets = ARRAY_SIZE(npu_cc_sm8250_resets),
 	.clk_regulators = npu_cc_sm8250_regulators,
 	.num_clk_regulators = ARRAY_SIZE(npu_cc_sm8250_regulators),
+	.clk_hws = npu_cc_sm8250_hws,
+	.num_clk_hws = ARRAY_SIZE(npu_cc_sm8250_hws),
 };
 
 static const struct of_device_id npu_cc_sm8250_match_table[] = {

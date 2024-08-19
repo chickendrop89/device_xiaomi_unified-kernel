@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 // Copyright (c) 2017-2019, The Linux Foundation. All rights reserved.
-// Copyright (c) 2022, Qualcomm Innovation Center, Inc. All rights reserved.
+// Copyright (c) 2022, 2024 Qualcomm Innovation Center, Inc. All rights reserved.
 
 #include <linux/kernel.h>
 #include <linux/bitops.h>
@@ -4104,6 +4104,9 @@ static int gcc_sm8150_probe(struct platform_device *pdev)
 	regmap_update_bits(regmap, 0x4d004, BIT(0), BIT(0));
 	regmap_update_bits(regmap, 0xb004, BIT(0), BIT(0));
 	regmap_update_bits(regmap, 0xb040, BIT(0), BIT(0));
+
+	gcc_sm8150_desc.gdscs = NULL;
+	gcc_sm8150_desc.num_gdscs = 0;
 
 	ret = qcom_cc_register_rcg_dfs(regmap, gcc_dfs_clocks,
 				       ARRAY_SIZE(gcc_dfs_clocks));

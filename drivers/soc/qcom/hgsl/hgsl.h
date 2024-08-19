@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2020-2022, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef __HGSL_H_
@@ -27,8 +27,17 @@
 
 #define HGSL_CONTEXT_NUM 256
 
+#define HGSL_IOCTL_FUNC(_cmd, _func) \
+	[_IOC_NR((_cmd))] = \
+		{ .cmd = (_cmd), .func = (_func) }
+
 struct qcom_hgsl;
 struct hgsl_hsync_timeline;
+
+struct hgsl_ioctl {
+	unsigned int cmd;
+	int (*func)(struct file *filep, unsigned long arg);
+};
 
 #pragma pack(push, 4)
 struct shadow_ts {
@@ -56,14 +65,23 @@ struct db_buffer {
 	void  *vaddr;
 };
 
+struct dbq_ibdesc_priv {
+	bool   buf_inuse;
+	uint32_t context_id;
+	uint32_t timestamp;
+};
+
 struct doorbell_queue {
 	struct dma_buf *dma;
 	struct dma_buf_map map;
 	void *vbase;
+	uint64_t  gmuaddr;
 	struct db_buffer data;
 	uint32_t state;
 	int tcsr_idx;
 	uint32_t dbq_idx;
+	struct dbq_ibdesc_priv ibdesc_priv;
+	uint32_t  ibdesc_max_size;
 	struct mutex lock;
 	atomic_t seq_num;
 };
@@ -118,6 +136,7 @@ struct qcom_hgsl {
 	struct hgsl_hyp_priv_t global_hyp;
 	bool global_hyp_inited;
 	struct mutex mutex;
+	struct list_head active_list;
 	struct list_head release_list;
 	struct workqueue_struct *release_wq;
 	struct work_struct release_work;
@@ -125,6 +144,12 @@ struct qcom_hgsl {
 	spinlock_t isync_timeline_lock;
 	atomic64_t total_mem_size;
 	bool default_iocoherency;
+
+	/* Debug nodes */
+	struct kobject sysfs;
+	struct kobject *clients_sysfs;
+	struct dentry *debugfs;
+	struct dentry *clients_debugfs;
 };
 
 /**
@@ -165,10 +190,19 @@ struct hgsl_priv {
 	struct list_head node;
 	struct hgsl_hyp_priv_t hyp_priv;
 	struct mutex lock;
-	struct list_head mem_mapped;
-	struct list_head mem_allocated;
+	struct rb_root mem_mapped;
+	struct rb_root mem_allocated;
+	int open_count;
 
 	atomic64_t total_mem_size;
+
+	/* sysfs stuff */
+	struct kobject kobj;
+	struct kobject sysfs_client;
+	struct kobject sysfs_mem_size;
+	struct dentry *debugfs_client;
+	struct dentry *debugfs_mem;
+	struct dentry *debugfs_memtype;
 };
 
 

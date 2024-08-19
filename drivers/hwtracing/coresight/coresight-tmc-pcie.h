@@ -10,11 +10,15 @@
 
 #include <linux/ipa_qdss.h>
 #include <linux/msm_mhi_dev.h>
+#include <linux/dma-direct.h>
 
 #define TMC_ETR_BAM_PIPE_INDEX	0
 #define TMC_ETR_BAM_NR_PIPES	2
 #define TMC_PCIE_MEM_SIZE     0x400000
 #define PCIE_BLK_SIZE 4096
+
+#define PCIE_DESC_BUF_SIZE 0x1000
+#define PCIE_DATA_BUF_SIZE 0x2000
 
 enum tmc_pcie_path {
 	TMC_PCIE_SW_PATH,
@@ -30,6 +34,13 @@ static const char * const str_tmc_pcie_path[] = {
 struct tmc_ipa_data {
 	struct ipa_qdss_conn_out_params ipa_qdss_out;
 	struct ipa_qdss_conn_in_params  ipa_qdss_in;
+};
+
+struct tmc_pcie_buf {
+	struct device	*dev;
+	dma_addr_t	daddr;
+	void		*vaddr;
+	size_t		size;
 };
 
 struct tmc_pcie_data {
@@ -56,6 +67,8 @@ struct tmc_pcie_data {
 	u32				buf_size;
 	uint64_t		total_size;
 	uint64_t		total_irq;
+	struct tmc_pcie_buf	*pcie_desc_buf;
+	struct tmc_pcie_buf	*pcie_data_buf;
 };
 
 int tmc_pcie_init(struct amba_device *adev,

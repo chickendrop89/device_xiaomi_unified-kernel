@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright (c) 2015, 2018, 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef __QCOM_CLK_ALPHA_PLL_H__
@@ -164,6 +164,9 @@ struct alpha_pll_config {
 	u32 test_ctl_hi_mask;
 	u32 vco_val;
 	u32 vco_mask;
+	const u32 *custom_reg_offset;
+	const u32 *custom_reg_val;
+	size_t num_custom_reg;
 };
 
 extern const struct clk_ops clk_alpha_pll_ops;

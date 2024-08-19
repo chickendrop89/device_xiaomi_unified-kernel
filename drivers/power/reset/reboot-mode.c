@@ -11,8 +11,10 @@
 #include <linux/reboot.h>
 #include <linux/reboot-mode.h>
 #include <linux/string.h>
+#include <linux/slab.h>
 
 #define PREFIX "mode-"
+#define MAX_REBOOT_REASON_LEN 30
 
 struct mode_info {
 	const char *mode;
@@ -45,13 +47,19 @@ static int reboot_mode_notify(struct notifier_block *this,
 {
 	struct reboot_mode_driver *reboot;
 	unsigned int magic;
+	char *reason = NULL;
+
+	if (cmd) {
+		reason = kmalloc(MAX_REBOOT_REASON_LEN, GFP_KERNEL);
+		strscpy(reason, (char *)cmd, MAX_REBOOT_REASON_LEN);
+	}
 
 	/* Before comparing to modes retrieved via DT, replace ' ' by '-' */
-	if (cmd && strnstr((char *)cmd, " ", strlen((char *)cmd)))
-		strreplace((char *)cmd, ' ', '-');
+	if (reason && strnstr(reason, " ", strlen(reason)))
+		strreplace(reason, ' ', '-');
 
 	reboot = container_of(this, struct reboot_mode_driver, reboot_notifier);
-	magic = get_reboot_mode_magic(reboot, cmd);
+	magic = get_reboot_mode_magic(reboot, reason);
 	if (magic)
 		reboot->write(reboot, magic);
 

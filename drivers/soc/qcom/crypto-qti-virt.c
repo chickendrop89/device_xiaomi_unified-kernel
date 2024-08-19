@@ -3,7 +3,7 @@
  * Crypto virtual library for storage encryption.
  *
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -17,8 +17,6 @@
 
 #define	RESERVE_SIZE                    (36*sizeof(uint16_t))
 #define	SECRET_SIZE                     (32)
-
-#define	HAB_TIMEOUT_MS                  (50000)
 
 /* FBE request command ids */
 #define	FBE_GET_MAX_SLOTS               (7)
@@ -50,35 +48,27 @@ struct fbe_v2_resp {
 	uint32_t crypto_modes_supported[BLK_ENCRYPTION_MODE_MAX];
 };
 
-struct fbe_req_args {
-	struct fbe_request_v2_t req;
-	struct fbe_v2_resp response;
-	int32_t ret;
-};
-
-static struct completion send_fbe_req_done;
-
-static int32_t send_fbe_req_hab(void *arg)
+static int32_t send_fbe_req(struct fbe_request_v2_t *req, struct fbe_v2_resp *response)
 {
-	int ret = 0;
+	int32_t ret = 0;
 	uint32_t status_size;
-	uint32_t handle;
-	struct fbe_req_args *req_args = (struct fbe_req_args *)arg;
+	uint32_t handle = 0;
 
 	do {
-		if (!req_args) {
+		if (!req || !response) {
 			pr_err("%s Null input\n", __func__);
 			ret = -EINVAL;
 			break;
 		}
 
-		ret = habmm_socket_open(&handle, MM_FDE_1, 0, 0);
+		ret = habmm_socket_open(&handle, MM_FDE_1, 0,
+					HABMM_SOCKET_OPEN_FLAGS_UNINTERRUPTIBLE);
 		if (ret) {
 			pr_err("habmm_socket_open failed with ret = %d\n", ret);
 			break;
 		}
 
-		ret = habmm_socket_send(handle, &req_args->req, sizeof(struct fbe_request_v2_t), 0);
+		ret = habmm_socket_send(handle, req, sizeof(struct fbe_request_v2_t), 0);
 		if (ret) {
 			pr_err("habmm_socket_send failed, ret= 0x%x\n", ret);
 			break;
@@ -86,7 +76,7 @@ static int32_t send_fbe_req_hab(void *arg)
 
 		do {
 			status_size = sizeof(struct fbe_v2_resp);
-			ret = habmm_socket_recv(handle, &req_args->response, &status_size, 0,
+			ret = habmm_socket_recv(handle, response, &status_size, 0,
 						HABMM_SOCKET_RECV_FLAGS_UNINTERRUPTIBLE);
 		} while (-EINTR == ret);
 
@@ -102,60 +92,37 @@ static int32_t send_fbe_req_hab(void *arg)
 			break;
 		}
 
-		ret = habmm_socket_close(handle);
-		if (ret) {
-			pr_err("habmm_socket_close failed with ret = %d\n", ret);
-			break;
-		}
 	} while (0);
 
-	req_args->ret = ret;
-
-	complete(&send_fbe_req_done);
-
-	return 0;
-}
-
-static void send_fbe_req(struct fbe_req_args *arg)
-{
-	struct task_struct *thread;
-
-	init_completion(&send_fbe_req_done);
-	arg->response.status  = 0;
-
-	thread = kthread_run(send_fbe_req_hab, arg, "send_fbe_req");
-	if (IS_ERR(thread)) {
-		arg->ret = -1;
-		return;
+	if (handle) {
+		ret = habmm_socket_close(handle);
+		if (ret)
+			pr_err("habmm_socket_close failed with err = %d\n", ret);
 	}
 
-	if (wait_for_completion_interruptible_timeout(
-		&send_fbe_req_done, msecs_to_jiffies(HAB_TIMEOUT_MS)) <= 0) {
-		pr_err("%s: timeout hit\n", __func__);
-		kthread_stop(thread);
-		arg->ret = -ETIME;
-		return;
-	}
+	return ret;
 }
 
 int crypto_qti_virt_ice_get_info(uint32_t *total_num_slots)
 {
-	struct fbe_req_args arg;
+	struct fbe_request_v2_t req;
+	struct fbe_v2_resp response;
+	int32_t ret = 0;
 
 	if (!total_num_slots) {
-		pr_err("%s Null input\n", __func__);
+		pr_err("%s: Null input\n", __func__);
 		return -EINVAL;
 	}
 
-	arg.req.cmd = FBE_GET_MAX_SLOTS;
-	send_fbe_req(&arg);
-	if (arg.ret || arg.response.status < 0) {
-		pr_err("send_fbe_req_v2 failed with ret = %d, max_slots = %d\n",
-		       arg.ret, arg.response.status);
+	req.cmd = FBE_GET_MAX_SLOTS;
+	ret = send_fbe_req(&req, &response);
+	if (ret || response.status < 0) {
+		pr_err("%s: send_fbe_req_v2 failed with ret = %d, max_slots = %d\n",
+		       __func__, ret, response.status);
 		return -ECOMM;
 	}
 
-	*total_num_slots = (uint32_t) arg.response.status;
+	*total_num_slots = (uint32_t) response.status;
 
 	return 0;
 }
@@ -164,26 +131,29 @@ EXPORT_SYMBOL(crypto_qti_virt_ice_get_info);
 static int verify_crypto_capabilities(enum blk_crypto_mode_num crypto_mode,
 				      unsigned int data_unit_size)
 {
-	struct fbe_req_args arg;
+	struct fbe_request_v2_t req;
+	struct fbe_v2_resp response;
+	int32_t ret = 0;
 
-	arg.req.cmd = FBE_VERIFY_CRYPTO_CAPS;
-	arg.req.crypto_mode = crypto_mode;
-	arg.req.data_unit_size = data_unit_size;
-	send_fbe_req(&arg);
-	if (arg.ret || arg.response.status < 0) {
-		pr_err("send_fbe_req_v2 failed with ret = %d, status = %d\n",
-			arg.ret, arg.response.status);
+	req.cmd = FBE_VERIFY_CRYPTO_CAPS;
+	req.crypto_mode = crypto_mode;
+	req.data_unit_size = data_unit_size;
+	ret = send_fbe_req(&req, &response);
+	if (ret || response.status < 0) {
+		pr_err("%s: send_fbe_req_v2 failed with ret = %d, status = %d\n",
+			__func__, ret, response.status);
 		return -EINVAL;
 	}
 
-	return arg.response.status;
+	return response.status;
 }
 
 int crypto_qti_virt_program_key(const struct blk_crypto_key *key,
 						unsigned int slot)
 {
-	struct fbe_req_args arg;
-	int ret = 0;
+	struct fbe_request_v2_t req;
+	struct fbe_v2_resp response;
+	int32_t ret = 0;
 
 	if (!key)
 		return -EINVAL;
@@ -197,16 +167,17 @@ int crypto_qti_virt_program_key(const struct blk_crypto_key *key,
 					 key->crypto_cfg.data_unit_size);
 	if (ret)
 		return -EINVAL;
-	/* program key */
-	arg.req.cmd = FBE_SET_KEY_V2;
-	arg.req.virt_slot = slot;
-	arg.req.key_size = key->size;
-	memcpy(&(arg.req.key[0]), key->raw, key->size);
-	send_fbe_req(&arg);
 
-	if (arg.ret || arg.response.status) {
-		pr_err("send_fbe_req_v2 failed with ret = %d, status = %d\n",
-		       arg.ret, arg.response.status);
+	/* program key */
+	req.cmd = FBE_SET_KEY_V2;
+	req.virt_slot = slot;
+	req.key_size = key->size;
+	memcpy(&(req.key[0]), key->raw, key->size);
+	ret = send_fbe_req(&req, &response);
+
+	if (ret || response.status) {
+		pr_err("%s: send_fbe_req_v2 failed with ret = %d, status = %d\n",
+		       __func__, ret, response.status);
 		return -ECOMM;
 	}
 
@@ -216,16 +187,18 @@ EXPORT_SYMBOL(crypto_qti_virt_program_key);
 
 int crypto_qti_virt_invalidate_key(unsigned int slot)
 {
-	struct fbe_req_args arg;
+	struct fbe_request_v2_t req;
+	struct fbe_v2_resp response;
+	int32_t ret = 0;
 
-	arg.req.cmd = FBE_CLEAR_KEY_V2;
-	arg.req.virt_slot = slot;
+	req.cmd = FBE_CLEAR_KEY_V2;
+	req.virt_slot = slot;
 
-	send_fbe_req(&arg);
+	ret = send_fbe_req(&req, &response);
 
-	if (arg.ret || arg.response.status) {
-		pr_err("send_fbe_req_v2 failed with ret = %d, status = %d\n",
-		       arg.ret, arg.response.status);
+	if (ret || response.status) {
+		pr_err("%s: send_fbe_req_v2 failed with ret = %d, status = %d\n",
+		       __func__, ret, response.status);
 		return -ECOMM;
 	}
 
@@ -236,18 +209,21 @@ EXPORT_SYMBOL(crypto_qti_virt_invalidate_key);
 int crypto_qti_virt_get_crypto_capabilities(unsigned int *crypto_modes_supported,
 					    uint32_t crypto_array_size)
 {
-	struct fbe_req_args arg;
+	struct fbe_request_v2_t req;
+	struct fbe_v2_resp response;
 
-	arg.req.cmd = FBE_GET_CRYPTO_CAPABILITIES;
+	int32_t ret = 0;
 
-	send_fbe_req(&arg);
+	req.cmd = FBE_GET_CRYPTO_CAPABILITIES;
 
-	if (arg.ret || arg.response.status) {
-		pr_err("send_fbe_req_v2 failed with ret = %d, status = %d\n",
-		       arg.ret, arg.response.status);
+	ret = send_fbe_req(&req, &response);
+
+	if (ret || response.status) {
+		pr_err("%s: send_fbe_req_v2 failed with ret = %d, status = %d\n",
+		       __func__, ret, response.status);
 		return -ECOMM;
 	}
-	memcpy(crypto_modes_supported, &(arg.response.crypto_modes_supported[0]),
+	memcpy(crypto_modes_supported, &(response.crypto_modes_supported[0]),
 	       crypto_array_size);
 
 	return 0;
@@ -259,21 +235,24 @@ int crypto_qti_virt_derive_raw_secret_platform(const u8 *wrapped_key,
 					       u8 *secret,
 					       unsigned int secret_size)
 {
-	struct fbe_req_args arg;
+	struct fbe_request_v2_t req;
+	struct fbe_v2_resp response;
 
-	arg.req.cmd = FBE_DERIVE_RAW_SECRET;
-	memcpy(&(arg.req.derive_raw_secret.wrapped_key[0]), wrapped_key,
+	int32_t ret = 0;
+
+	req.cmd = FBE_DERIVE_RAW_SECRET;
+	memcpy(&(req.derive_raw_secret.wrapped_key[0]), wrapped_key,
 	       wrapped_key_size);
-	arg.req.derive_raw_secret.wrapped_key_size = wrapped_key_size;
+	req.derive_raw_secret.wrapped_key_size = wrapped_key_size;
 
-	send_fbe_req(&arg);
+	ret = send_fbe_req(&req, &response);
 
-	if (arg.ret || arg.response.status) {
-		pr_err("send_fbe_req_v2 failed with ret = %d, status = %d\n",
-		       arg.ret, arg.response.status);
+	if (ret || response.status) {
+		pr_err("%s: send_fbe_req_v2 failed with ret = %d, status = %d\n",
+		       __func__, ret, response.status);
 		return -EINVAL;
 	}
-	memcpy(secret, &(arg.response.secret_key[0]), secret_size);
+	memcpy(secret, &(response.secret_key[0]), secret_size);
 
 	return 0;
 }

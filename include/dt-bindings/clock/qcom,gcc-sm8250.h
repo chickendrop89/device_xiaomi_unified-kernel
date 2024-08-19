@@ -221,6 +221,9 @@
 #define GCC_UFS_PHY_ICE_CORE_HW_CTL_CLK				207
 #define GCC_UFS_PHY_PHY_AUX_HW_CTL_CLK				208
 #define GCC_UFS_PHY_UNIPRO_CORE_HW_CTL_CLK			209
+#define GCC_PCIE_0_PIPE_CLK_SRC					210
+#define GCC_PCIE_1_PIPE_CLK_SRC					211
+#define GCC_PCIE_2_PIPE_CLK_SRC					212
 
 /* GCC resets */
 #define GCC_GPU_BCR						0
@@ -268,9 +271,6 @@
 #define GCC_USB_PHY_CFG_AHB2PHY_BCR				42
 #define GCC_VIDEO_AXI0_CLK_ARES					43
 #define GCC_VIDEO_AXI1_CLK_ARES					44
-#define GCC_PCIE_0_PIPE_CLK_SRC					45
-#define GCC_PCIE_1_PIPE_CLK_SRC					46
-#define GCC_PCIE_2_PIPE_CLK_SRC					47
 
 /* GCC power domains */
 #define PCIE_0_GDSC						0

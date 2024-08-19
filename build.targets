@@ -1,5 +1,7 @@
 build.config.msm.kalama
 build.config.msm.kalama.le
+build.config.msm.kalamale.roboticsvm
+build.config.msm.kalama.lu
 build.config.msm.kalama.vm
 build.config.msm.gen3auto
 build.config.msm.gen4auto
@@ -15,3 +17,4 @@ build.config.msm.kona
 build.config.msm.kona.le
 build.config.msm.qcs405
 build.config.msm.trinket
+build.config.msm.qcs605

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #define pr_fmt(fmt) "%s: %s: " fmt, KBUILD_MODNAME, __func__
@@ -9,6 +9,7 @@
 #include <linux/arm-smccc.h>
 #include <linux/cdev.h>
 #include <linux/compat.h>
+#include <linux/delay.h>
 #include <linux/device.h>
 #include <linux/errno.h>
 #include <linux/fs.h>
@@ -26,6 +27,7 @@
 #include <linux/sysfs.h>
 #include <linux/uaccess.h>
 #include <soc/qcom/rpm-smd.h>
+#include <soc/qcom/subsystem_sleep_stats.h>
 #include <linux/soc/qcom/qcom_aoss.h>
 
 #include "linux/power_state.h"
@@ -56,6 +58,8 @@
 #define PS_SSR_NOTIFIER_PRIORITY	0
 
 #define MAX_QMP_MSG_SIZE	96
+#define SUSBSYSTEM_SLEEP_CHECK_MAX_RETRIES	2
+#define DELAY	50
 
 enum power_states {
 	ACTIVE,
@@ -103,6 +107,7 @@ struct power_state_drvdata {
 	struct kobject *ps_kobj;
 	struct kobj_attribute ps_ka;
 	struct kobj_attribute ds_ka;
+	struct kobj_attribute ds_allow_ka;
 	struct wakeup_source *ps_ws;
 	struct notifier_block ps_pm_nb;
 	struct qmp *qmp;
@@ -111,7 +116,8 @@ struct power_state_drvdata {
 	enum power_states current_state;
 	int subsys_count;
 	struct list_head sub_sys_list;
-	bool deep_sleep_allowed;
+	int deep_sleep_cnt;
+	int deep_sleep_allowed;
 };
 
 static struct power_state_drvdata *drv;
@@ -124,6 +130,9 @@ static int subsys_suspend(struct subsystem_data *ss_data, struct rproc *rproc, u
 	case SUBSYS_DEEPSLEEP:
 	case SUBSYS_HIBERNATE:
 		ss_data->ignore_ssr = true;
+#if IS_ENABLED(CONFIG_QCOM_DS_SKIP_Q6_STOP)
+		adsp_set_ops_stop(rproc, true);
+#endif
 		rproc_shutdown(rproc);
 		ss_data->ignore_ssr = false;
 		break;
@@ -144,6 +153,9 @@ static int subsys_resume(struct subsystem_data *ss_data, struct rproc *rproc, u3
 	case SUBSYS_DEEPSLEEP:
 	case SUBSYS_HIBERNATE:
 		ss_data->ignore_ssr = true;
+#if IS_ENABLED(CONFIG_QCOM_DS_SKIP_Q6_STOP)
+		adsp_set_ops_stop(rproc, false);
+#endif
 		ret = rproc_boot(rproc);
 		ss_data->ignore_ssr = false;
 		break;
@@ -185,6 +197,23 @@ static int subsystem_suspend(struct power_state_drvdata *drv, u32 state)
 	struct subsystem_data *ss_data;
 	int ret = 0;
 	struct rproc *rproc = NULL;
+#if IS_ENABLED(CONFIG_QCOM_DS_SKIP_Q6_STOP)
+	bool subsys_sleep_status;
+	int i;
+
+	for (i = 0; i < SUSBSYSTEM_SLEEP_CHECK_MAX_RETRIES; i++) {
+		subsys_sleep_status = current_subsystem_sleep();
+		if (subsys_sleep_status)
+			break;
+		pr_err("subsytems are not in sleep retrying.....\n");
+		msleep(DELAY);
+	}
+
+	if (i == SUSBSYSTEM_SLEEP_CHECK_MAX_RETRIES) {
+		pr_err("Error: still subsystems are not in sleep\n");
+		BUG();
+	}
+#endif
 
 	list_for_each_entry(ss_data, &drv->sub_sys_list, list) {
 		pr_info("%s subsystem suspend start\n", ss_data->name);
@@ -433,8 +462,10 @@ static void power_state_resume(void)
 {
 	struct arm_smccc_res res;
 
-	if (pm_suspend_via_firmware())
+	if (pm_suspend_via_firmware()) {
 		arm_smccc_smc(DS_ENTRY_SMC_ID, DS_NUM_PARAMETERS, DS_EXIT, 0, 0, 0, 0, 0, &res);
+		drv->deep_sleep_cnt += 1;
+	}
 }
 
 static int power_state_suspend(void)
@@ -462,16 +493,42 @@ static ssize_t deep_sleep_allowed_store(struct kobject *kobj, struct kobj_attrib
 					const char *buf, size_t count)
 {
 	struct power_state_drvdata *drv = container_of(attr, struct power_state_drvdata, ds_ka);
-	bool val;
+	int val;
 	int ret;
 
-	ret = kstrtobool(buf, &val);
+	ret = kstrtoint(buf, 10, &val);
 	if (ret) {
 		pr_err("Invalid argument passed\n");
 		return ret;
 	}
 
 	drv->deep_sleep_allowed = val;
+
+	return count;
+}
+
+static ssize_t deep_sleep_cnt_show(struct kobject *kobj, struct kobj_attribute *attr,
+				       char *buf)
+{
+	struct power_state_drvdata *drv = container_of(attr, struct power_state_drvdata, ds_ka);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", drv->deep_sleep_cnt);
+}
+
+static ssize_t deep_sleep_cnt_store(struct kobject *kobj, struct kobj_attribute *attr,
+					const char *buf, size_t count)
+{
+	struct power_state_drvdata *drv = container_of(attr, struct power_state_drvdata, ds_ka);
+	int val;
+	int ret;
+
+	ret = kstrtoint(buf, 10, &val);
+	if (ret) {
+		pr_err("Invalid argument passed\n");
+		return ret;
+	}
+
+	drv->deep_sleep_cnt = val;
 
 	return count;
 }
@@ -537,13 +594,26 @@ static int power_state_dev_init(struct power_state_drvdata *drv)
 
 	sysfs_attr_init(&drv->ds_ka.attr);
 	drv->ds_ka.attr.mode = 0644;
-	drv->ds_ka.attr.name = "deep_sleep_allowed";
-	drv->ds_ka.show = deep_sleep_allowed_show;
-	drv->ds_ka.store = deep_sleep_allowed_store;
+	drv->ds_ka.attr.name = "deep_sleep_cnt";
+	drv->ds_ka.show = deep_sleep_cnt_show;
+	drv->ds_ka.store = deep_sleep_cnt_store;
 
 	ret = sysfs_create_file(drv->ps_kobj, &drv->ds_ka.attr);
 	if (ret) {
 		sysfs_remove_file(drv->ps_kobj, &drv->ps_ka.attr);
+		goto exit;
+	}
+
+	sysfs_attr_init(&drv->ds_allow_ka.attr);
+	drv->ds_allow_ka.attr.mode = 0644;
+	drv->ds_allow_ka.attr.name = "deep_sleep_allowed";
+	drv->ds_allow_ka.show = deep_sleep_allowed_show;
+	drv->ds_allow_ka.store = deep_sleep_allowed_store;
+
+	ret = sysfs_create_file(drv->ps_kobj, &drv->ds_allow_ka.attr);
+	if (ret) {
+		sysfs_remove_file(drv->ps_kobj, &drv->ps_ka.attr);
+		sysfs_remove_file(drv->ps_kobj, &drv->ds_ka.attr);
 		goto exit;
 	}
 
@@ -570,6 +640,12 @@ static int power_state_probe(struct platform_device *pdev)
 	drv = devm_kzalloc(&pdev->dev, sizeof(*drv), GFP_KERNEL);
 	if (!drv)
 		return -ENOMEM;
+
+	if (IS_ENABLED(CONFIG_NOTIFY_AOP)) {
+		drv->qmp = qmp_get(&pdev->dev);
+		if (IS_ERR(drv->qmp))
+			return -EPROBE_DEFER;
+	}
 
 	drv->ps_pm_nb.notifier_call = ps_pm_cb;
 	drv->ps_pm_nb.priority = PS_PM_NOTIFIER_PRIORITY;
@@ -599,7 +675,7 @@ static int power_state_probe(struct platform_device *pdev)
 			goto remove_ss;
 		}
 
-		ss_data->name = name;
+		ss_data->name = kstrdup_const(name, GFP_KERNEL);
 		ss_data->rproc_handle = rproc_handle;
 
 		ss_data->ps_ssr_nb.notifier_call = ps_ssr_cb;
@@ -623,14 +699,6 @@ static int power_state_probe(struct platform_device *pdev)
 		}
 
 		list_add_tail(&ss_data->list, &drv->sub_sys_list);
-	}
-
-	if (IS_ENABLED(CONFIG_NOTIFY_AOP)) {
-		drv->qmp = qmp_get(&pdev->dev);
-		if (IS_ERR(drv->qmp)) {
-			ret = PTR_ERR(drv->qmp);
-			goto remove_ss;
-		}
 	}
 
 	ret = power_state_dev_init(drv);

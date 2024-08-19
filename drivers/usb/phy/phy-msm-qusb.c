@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2021-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/module.h>
@@ -22,6 +22,7 @@
 #include <linux/regulator/driver.h>
 #include <linux/regulator/machine.h>
 #include <linux/usb/phy.h>
+#include <linux/usb/dwc3-msm.h>
 #include <linux/reset.h>
 
 #define QUSB2PHY_PLL_PWR_CTL		0x18
@@ -164,6 +165,8 @@ struct qusb_phy {
 	int			tune2_efuse_correction;
 
 	bool			cable_connected;
+	bool			clocks_enabled;
+	bool			power_enabled;
 	bool			suspended;
 	bool			ulpi_mode;
 	bool			dpdm_enable;
@@ -194,15 +197,19 @@ struct qusb_phy {
 
 static void qusb_phy_enable_clocks(struct qusb_phy *qphy, bool on)
 {
-	dev_dbg(qphy->phy.dev, "%s(): on:%d\n", __func__, on);
+	dev_dbg(qphy->phy.dev, "%s(): clocks_enabled:%d on:%d\n",
+				__func__, qphy->clocks_enabled, on);
 
-	if (on) {
+	if (!qphy->clocks_enabled && on) {
 		clk_prepare_enable(qphy->ref_clk_src);
 		clk_prepare_enable(qphy->ref_clk);
 		clk_prepare_enable(qphy->iface_clk);
 		clk_prepare_enable(qphy->core_clk);
 		clk_prepare_enable(qphy->cfg_ahb_clk);
-	} else {
+		qphy->clocks_enabled = true;
+	}
+
+	if (qphy->clocks_enabled && !on) {
 		clk_disable_unprepare(qphy->cfg_ahb_clk);
 		/*
 		 * FSM depedency beween iface_clk and core_clk.
@@ -212,6 +219,7 @@ static void qusb_phy_enable_clocks(struct qusb_phy *qphy, bool on)
 		clk_disable_unprepare(qphy->iface_clk);
 		clk_disable_unprepare(qphy->ref_clk);
 		clk_disable_unprepare(qphy->ref_clk_src);
+		qphy->clocks_enabled = false;
 	}
 
 }
@@ -265,6 +273,11 @@ static int qusb_phy_enable_power(struct qusb_phy *qphy, bool on)
 
 	dev_dbg(qphy->phy.dev, "%s turn %s regulators\n",
 			__func__, on ? "on" : "off");
+
+	if (qphy->power_enabled == on) {
+		dev_dbg(qphy->phy.dev, "Regulators are already %s.\n", on ? "ON" : " OFF");
+		return 0;
+	}
 
 	if (!on)
 		goto disable_vdda33;
@@ -323,6 +336,7 @@ static int qusb_phy_enable_power(struct qusb_phy *qphy, bool on)
 	}
 
 	pr_debug("%s(): QUSB PHY's regulators are turned ON.\n", __func__);
+	qphy->power_enabled = true;
 	return ret;
 
 disable_vdda33:
@@ -371,6 +385,7 @@ unconfig_vdd:
 err_vdd:
 	dev_dbg(qphy->phy.dev, "QUSB PHY's regulators are turned OFF.\n");
 
+	qphy->power_enabled = false;
 	return ret;
 }
 
@@ -450,6 +465,7 @@ static int qusb_phy_init(struct usb_phy *phy)
 	u8 reg;
 	bool pll_lock_fail = false;
 
+	qusb_phy_enable_clocks(qphy, true);
 	if (qphy->eud_enable_reg && readl_relaxed(qphy->eud_enable_reg)) {
 		dev_err(qphy->phy.dev, "eud is enabled\n");
 		return 0;
@@ -604,12 +620,11 @@ static void qusb_phy_shutdown(struct usb_phy *phy)
 {
 	struct qusb_phy *qphy = container_of(phy, struct qusb_phy, phy);
 
+	qusb_phy_enable_clocks(qphy, true);
 	if (qphy->eud_enable_reg && readl_relaxed(qphy->eud_enable_reg)) {
 		dev_err(qphy->phy.dev, "eud is enabled\n");
 		return;
 	}
-
-	qusb_phy_enable_clocks(qphy, true);
 
 	/* Disable the PHY */
 	if (qphy->major_rev < 2)
@@ -645,7 +660,15 @@ static int qusb_phy_set_suspend(struct usb_phy *phy, int suspend)
 
 	if (suspend) {
 		/* Bus suspend case */
-		if (qphy->cable_connected) {
+		/*
+		 * The HUB class drivers calls usb_phy_notify_disconnect() upon a device
+		 * disconnect. Consider a scenario where a USB device is disconnected without
+		 * detaching the OTG cable. qphy->cable_connected is marked false due to above
+		 * mentioned call path. Now, while entering low power mode (host bus suspend),
+		 * we come here and turn off regulators thinking no cable is connected. Prevent
+		 * this by not turning off regulators while in host mode.
+		 */
+		if (qphy->cable_connected || (qphy->phy.flags & PHY_HOST_MODE)) {
 			/* Clear all interrupts */
 			writel_relaxed(0x00,
 				qphy->base + QUSB2PHY_PORT_INTR_CTRL);
@@ -855,10 +878,19 @@ static int qusb_phy_dpdm_regulator_enable(struct regulator_dev *rdev)
 	dev_dbg(qphy->phy.dev, "%s dpdm_enable:%d\n",
 				__func__, qphy->dpdm_enable);
 
+	/* Turn on the clocks to avoid unclocked access while reading EUD_EN reg*/
+	qusb_phy_enable_clocks(qphy, true);
 	if (qphy->eud_enable_reg && readl_relaxed(qphy->eud_enable_reg)) {
 		dev_err(qphy->phy.dev, "eud is enabled\n");
-		return 0;
+		/*
+		 * Dont turn off the clocks since EUD is enabled, and return -EPERM
+		 * since we dont want chargerfw to go ahead with its APSD operation
+		 */
+		return -EPERM;
 	}
+
+	if (!qphy->cable_connected)
+		qusb_phy_enable_clocks(qphy, false);
 
 	mutex_lock(&qphy->phy_lock);
 	if (!qphy->dpdm_enable) {

@@ -2919,14 +2919,14 @@ static void stmmac_dma_interrupt(struct stmmac_priv *priv)
 	u32 rx_channel_count = priv->plat->rx_queues_to_use;
 	u32 channels_to_check = tx_channel_count > rx_channel_count ?
 				tx_channel_count : rx_channel_count;
-	u32 chan;
+	int chan;
 	int status[max_t(u32, MTL_MAX_TX_QUEUES, MTL_MAX_RX_QUEUES)];
 
 	/* Make sure we never check beyond our status buffer. */
 	if (WARN_ON_ONCE(channels_to_check > ARRAY_SIZE(status)))
 		channels_to_check = ARRAY_SIZE(status);
 
-	for (chan = 0; chan < channels_to_check; chan++)
+	for (chan = channels_to_check - 1; chan >= 0; chan--)
 		status[chan] = stmmac_napi_check(priv, chan,
 						 DMA_DIR_RXTX);
 
@@ -3456,17 +3456,17 @@ static int stmmac_hw_setup(struct net_device *dev, bool ptp_register)
 			netdev_warn(priv->dev,
 				    "failed to enable PTP reference clock: %pe\n",
 				    ERR_PTR(ret));
-	}
 
-	ret = stmmac_init_ptp(priv);
-	if (ret == -EOPNOTSUPP)
-		netdev_warn(priv->dev, "PTP not supported by HW\n");
-	else if (ret)
-		netdev_warn(priv->dev, "PTP init failed\n");
-	else if (ptp_register) {
-		stmmac_ptp_register(priv);
-		clk_set_rate(priv->plat->clk_ptp_ref,
-					 priv->plat->clk_ptp_rate);
+		ret = stmmac_init_ptp(priv);
+		if (ret == -EOPNOTSUPP) {
+			netdev_warn(priv->dev, "PTP not supported by HW\n");
+		} else if (ret) {
+			netdev_warn(priv->dev, "PTP init failed\n");
+		} else {
+			stmmac_ptp_register(priv);
+			clk_set_rate(priv->plat->clk_ptp_ref,
+				     priv->plat->clk_ptp_rate);
+		}
 		ret = priv->plat->init_pps(priv);
 	}
 
@@ -3958,6 +3958,8 @@ static int stmmac_open(struct net_device *dev)
 	if (ret)
 		goto irq_error;
 
+	priv->irq_number = dev->irq;
+
 	stmmac_enable_all_queues(priv);
 	netif_tx_start_all_queues(priv->dev);
 	stmmac_enable_all_dma_irq(priv);
@@ -3995,7 +3997,7 @@ static void stmmac_fpe_stop_wq(struct stmmac_priv *priv)
 
 	if (priv->fpe_wq)
 		destroy_workqueue(priv->fpe_wq);
-
+	priv->fpe_wq = NULL;
 	netdev_info(priv->dev, "FPE workqueue stop");
 }
 
@@ -7662,6 +7664,12 @@ int stmmac_suspend(struct device *dev)
 			hrtimer_cancel(&priv->tx_queue[chan].txtimer);
 	}
 
+	/* Free the IRQ lines */
+	if (priv->irq_number != 0) {
+		free_irq(ndev->irq, ndev);
+		priv->irq_number = 0;
+	}
+
 	if (priv->eee_enabled) {
 		priv->tx_path_in_lpi_mode = false;
 		del_timer_sync(&priv->eee_ctrl_timer);
@@ -7816,6 +7824,16 @@ int stmmac_resume(struct device *dev)
 	stmmac_set_rx_mode(ndev);
 
 	stmmac_restore_hw_vlan_rx_fltr(priv, ndev, priv->hw);
+
+	if (priv->irq_number == 0) {
+		ret = request_irq(ndev->irq, stmmac_interrupt,
+				  IRQF_SHARED, ndev->name, ndev);
+		if (unlikely(ret < 0))
+			netdev_err(priv->dev,
+				   "%s: ERROR: allocating the IRQ %d (error: %d)\n",
+				   __func__, ndev->irq, ret);
+		priv->irq_number = ndev->irq;
+	}
 
 	stmmac_enable_all_queues(priv);
 	stmmac_enable_all_dma_irq(priv);

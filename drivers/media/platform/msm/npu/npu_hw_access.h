@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2018-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _NPU_HW_ACCESS_H
@@ -83,8 +83,5 @@ void npu_disable_sys_cache(struct npu_device *npu_dev);
 
 int npu_subsystem_get(struct npu_device *npu_dev, const char *fw_name);
 void npu_subsystem_put(struct npu_device *npu_dev);
-
-void npu_process_log_message(struct npu_device *npu_dev, uint32_t *msg,
-	uint32_t size);
 
 #endif /* _NPU_HW_ACCESS_H*/

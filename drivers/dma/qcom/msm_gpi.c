@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/atomic.h>
@@ -596,6 +596,8 @@ struct gpii {
 	bool unlock_tre_set;
 	bool dual_ee_sync_flag;
 	bool is_resumed;
+	bool is_multi_desc;
+	int num_msgs;
 };
 
 struct gpi_desc {
@@ -867,6 +869,25 @@ void gpi_dump_for_geni(struct dma_chan *chan)
 }
 EXPORT_SYMBOL(gpi_dump_for_geni);
 
+/**
+ * gpi_update_multi_desc_flag() - update multi descriptor flag and num of msgs for
+ *				   multi descriptor mode handling.
+ * @chan: Base address of dma channel
+ * @is_multi_descriptor: is multi descriptor flag
+ * @num_msgs: number of client messages
+ *
+ * Return:None
+ */
+void gpi_update_multi_desc_flag(struct dma_chan *chan, bool is_multi_descriptor, int num_msgs)
+{
+	struct gpii_chan *gpii_chan = to_gpii_chan(chan);
+	struct gpii *gpii = gpii_chan->gpii;
+
+	gpii->is_multi_desc = is_multi_descriptor;
+	gpii->num_msgs = num_msgs;
+}
+EXPORT_SYMBOL_GPL(gpi_update_multi_desc_flag);
+
 static void gpi_disable_interrupts(struct gpii *gpii)
 {
 	struct {
@@ -935,6 +956,7 @@ static void gpi_disable_interrupts(struct gpii *gpii)
 				    default_reg[i].shift,
 				    default_reg[i].val);
 	gpii->cntxt_type_irq_msk = 0;
+	free_irq(gpii->irq, gpii);
 	gpii->configured_irq = false;
 }
 
@@ -1049,9 +1071,8 @@ static int gpi_config_interrupts(struct gpii *gpii,
 		  (mask) ? 'T' : 'F');
 
 	if (!gpii->configured_irq) {
-		ret = devm_request_irq(gpii->gpi_dev->dev, gpii->irq,
-				       gpi_handle_irq, IRQF_TRIGGER_HIGH,
-				       gpii->label, gpii);
+		ret = request_irq(gpii->irq, gpi_handle_irq, IRQF_TRIGGER_HIGH,
+				  gpii->label, gpii);
 		if (ret < 0) {
 			GPII_CRITIC(gpii, GPI_DBG_COMMON,
 				    "error request irq:%d ret:%d\n",
@@ -1090,6 +1111,268 @@ static int gpi_config_interrupts(struct gpii *gpii,
 
 	return 0;
 }
+
+/**
+ * gsi_common_ev_cb() - gsi common event callback
+ * @ch: Base address of dma channel
+ * @cb_str: Base address of call back string
+ * @ptr: Base address of gsi common structure
+ *
+ * Return: None
+ */
+static void gsi_common_ev_cb(struct dma_chan *ch, struct msm_gpi_cb const *cb_str, void *ptr)
+{
+	struct gsi_common *gsi = ptr;
+
+	if (!gsi) {
+		pr_err("%s: Invalid ev_cb buffer\n", __func__);
+		return;
+	}
+
+	GSI_SE_DBG(gsi->ipc, false, gsi->dev, "%s: protocol:%d\n", __func__, gsi->protocol);
+	gsi->ev_cb_fun(ch, cb_str, ptr);
+}
+
+/**
+ * gsi_common_tx_cb() - gsi common tx callback
+ * @ptr: Base address of gsi common structure
+ *
+ * Return: None
+ */
+static void gsi_common_tx_cb(void *ptr)
+{
+	struct msm_gpi_dma_async_tx_cb_param *tx_cb = ptr;
+	struct gsi_common *gsi;
+
+	if (!(tx_cb && tx_cb->userdata)) {
+		pr_err("%s: Invalid tx_cb buffer\n", __func__);
+		return;
+	}
+
+	gsi = (struct gsi_common *)tx_cb->userdata;
+	GSI_SE_DBG(gsi->ipc, false, gsi->dev, "%s: protocol:%d\n", __func__, gsi->protocol);
+	gsi->tx.cb_fun(tx_cb);
+}
+
+/**
+ * gsi_common_rx_cb() - gsi common rx callback
+ * @ptr: Base address of gsi common structure
+ *
+ * Return: None
+ */
+static void gsi_common_rx_cb(void *ptr)
+{
+	struct msm_gpi_dma_async_tx_cb_param *rx_cb = ptr;
+	struct gsi_common *gsi;
+
+	if (!(rx_cb && rx_cb->userdata)) {
+		pr_err("%s: Invalid rx_cb buffer\n", __func__);
+		return;
+	}
+
+	gsi = (struct gsi_common *)rx_cb->userdata;
+	gsi->rx.cb_fun(rx_cb);
+	GSI_SE_DBG(gsi->ipc, false, gsi->dev, "%s: protocol:%d\n", __func__, gsi->protocol);
+}
+
+/**
+ * gsi_common_clear_tre_indexes() - gsi common queue clear tre indexes
+ * @gsi_q: Base address of gsi common queue
+ *
+ * Return: None
+ */
+void gsi_common_clear_tre_indexes(struct gsi_tre_queue *gsi_q)
+{
+	gsi_q->msg_cnt = 0;
+	gsi_q->unmap_msg_cnt = 0;
+	gsi_q->freed_msg_cnt = 0;
+	atomic_set(&gsi_q->irq_cnt, 0);
+}
+EXPORT_SYMBOL_GPL(gsi_common_clear_tre_indexes);
+
+/**
+ * gsi_common_fill_tre_buf() - gsi common fill tre buffers
+ * @gsi: Base address of gsi common
+ * @tx_chan: dma transfer channel type
+ *
+ * Return: Returns tre count
+ */
+int gsi_common_fill_tre_buf(struct gsi_common *gsi, bool tx_chan)
+{
+	struct gsi_xfer_param *xfer;
+	int  tre_cnt = 0, i;
+	int index = 0;
+
+	if (tx_chan)
+		xfer = &gsi->tx;
+	else
+		xfer = &gsi->rx;
+
+	for (i = 0; i < GSI_MAX_TRE_TYPES; i++) {
+		if (xfer->tre.flags & (1 << i))
+			tre_cnt++;
+	}
+	sg_init_table(xfer->sg, tre_cnt);
+
+	if (xfer->tre.flags & LOCK_TRE_SET)
+		sg_set_buf(&xfer->sg[index++], &xfer->tre.lock_t, sizeof(xfer->tre.lock_t));
+	if (xfer->tre.flags & CONFIG_TRE_SET)
+		sg_set_buf(&xfer->sg[index++], &xfer->tre.config_t, sizeof(xfer->tre.config_t));
+	if (xfer->tre.flags & GO_TRE_SET)
+		sg_set_buf(&xfer->sg[index++], &xfer->tre.go_t, sizeof(xfer->tre.go_t));
+	if (xfer->tre.flags & DMA_TRE_SET)
+		sg_set_buf(&xfer->sg[index++], &xfer->tre.dma_t, sizeof(xfer->tre.dma_t));
+	if (xfer->tre.flags & UNLOCK_TRE_SET)
+		sg_set_buf(&xfer->sg[index++], &xfer->tre.unlock_t, sizeof(xfer->tre.unlock_t));
+	GSI_SE_DBG(gsi->ipc, false, gsi->dev, "%s: tre_cnt:%d chan:%d flags:0x%x\n",
+		   __func__, tre_cnt, tx_chan, xfer->tre.flags);
+	return tre_cnt;
+}
+EXPORT_SYMBOL_GPL(gsi_common_fill_tre_buf);
+
+/**
+ * gsi_common_doorbell_hit() - gsi common doorbell hit
+ * @gsi: Base address of gsi common
+ * @tx_chan: dma transfer channel type
+ *
+ * Return: Returns success or failure
+ */
+static int gsi_common_doorbell_hit(struct gsi_common *gsi, bool tx_chan)
+{
+	dma_cookie_t cookie;
+	struct dma_async_tx_descriptor *dma_desc;
+	struct dma_chan *dma_ch;
+
+	if (tx_chan) {
+		dma_desc = gsi->tx.desc;
+		dma_ch = gsi->tx.ch;
+	} else {
+		dma_desc = gsi->rx.desc;
+		dma_ch = gsi->rx.ch;
+	}
+
+	reinit_completion(gsi->xfer);
+
+	cookie = dmaengine_submit(dma_desc);
+	if (dma_submit_error(cookie)) {
+		GSI_SE_ERR(gsi->ipc, true, gsi->dev,
+			   "%s: dmaengine_submit failed (%d)\n", __func__, cookie);
+		return -EINVAL;
+	}
+	dma_async_issue_pending(dma_ch);
+	return 0;
+}
+
+/**
+ * gsi_common_prep_desc_and_submit() - gsi common prepare descriptor and gsi submit
+ * @gsi: Base address of gsi common
+ * @segs: Num of segments
+ * @tx_chan: dma transfer channel type
+ * @skip_callbacks: flag used to register callbacks
+ *
+ * Return: Returns success or failure
+ */
+int gsi_common_prep_desc_and_submit(struct gsi_common *gsi, int segs, bool tx_chan,
+				    bool skip_callbacks)
+{
+	struct gsi_xfer_param *xfer;
+	struct dma_async_tx_descriptor *geni_desc = NULL;
+
+	/* tx channel process */
+	if (tx_chan) {
+		xfer = &gsi->tx;
+		geni_desc = dmaengine_prep_slave_sg(gsi->tx.ch, gsi->tx.sg, segs, DMA_MEM_TO_DEV,
+						    (DMA_PREP_INTERRUPT | DMA_CTRL_ACK));
+		if (!geni_desc) {
+			GSI_SE_ERR(gsi->ipc, true, gsi->dev, "prep_slave_sg for tx failed\n");
+			return -ENOMEM;
+		}
+
+		if (skip_callbacks) {
+			geni_desc->callback = NULL;
+			geni_desc->callback_param = NULL;
+		} else {
+			geni_desc->callback = gsi_common_tx_cb;
+			geni_desc->callback_param = &gsi->tx.cb;
+		}
+		gsi->tx.desc = geni_desc;
+		return gsi_common_doorbell_hit(gsi, tx_chan);
+	}
+
+	/* Rx channel process */
+	geni_desc = dmaengine_prep_slave_sg(gsi->rx.ch, gsi->rx.sg, segs, DMA_DEV_TO_MEM,
+					    (DMA_PREP_INTERRUPT | DMA_CTRL_ACK));
+	if (!geni_desc) {
+		GSI_SE_ERR(gsi->ipc, true, gsi->dev, "prep_slave_sg for rx failed\n");
+		return -ENOMEM;
+	}
+	geni_desc->callback = gsi_common_rx_cb;
+	geni_desc->callback_param = &gsi->rx.cb;
+	gsi->rx.desc = geni_desc;
+	return gsi_common_doorbell_hit(gsi, tx_chan);
+}
+EXPORT_SYMBOL_GPL(gsi_common_prep_desc_and_submit);
+
+/**
+ * geni_gsi_common_request_channel() - gsi common dma request channel
+ * @gsi: Base address of gsi common
+ *
+ * Return: Returns success or failure
+ */
+int geni_gsi_common_request_channel(struct gsi_common *gsi)
+{
+	int ret = 0;
+
+	if (!gsi->tx.ch) {
+		gsi->tx.ch = dma_request_slave_channel(gsi->dev, "tx");
+		if (!gsi->tx.ch) {
+			GSI_SE_ERR(gsi->ipc, true, gsi->dev, "tx dma req slv chan ret:%d\n", -EIO);
+			return -EIO;
+		}
+	}
+
+	if (!gsi->rx.ch) {
+		gsi->rx.ch = dma_request_slave_channel(gsi->dev, "rx");
+		if (!gsi->rx.ch) {
+			GSI_SE_ERR(gsi->ipc, true, gsi->dev, "rx dma req slv chan ret:%d\n", -EIO);
+			dma_release_channel(gsi->tx.ch);
+			return -EIO;
+		}
+	}
+
+	gsi->tx.ev.init.callback = gsi_common_ev_cb;
+	gsi->tx.ev.init.cb_param = gsi;
+	gsi->tx.ev.cmd = MSM_GPI_INIT;
+	gsi->tx.ch->private = &gsi->tx.ev;
+	ret = dmaengine_slave_config(gsi->tx.ch, NULL);
+	if (ret) {
+		GSI_SE_ERR(gsi->ipc, true, gsi->dev, "tx dma slave config ret:%d\n", ret);
+		goto dmaengine_slave_config_fail;
+	}
+
+	gsi->rx.ev.init.cb_param = gsi;
+	gsi->rx.ev.init.callback = gsi_common_ev_cb;
+	gsi->rx.ev.cmd = MSM_GPI_INIT;
+	gsi->rx.ch->private = &gsi->rx.ev;
+	ret = dmaengine_slave_config(gsi->rx.ch, NULL);
+	if (ret) {
+		GSI_SE_ERR(gsi->ipc, true, gsi->dev, "rx dma slave config ret:%d\n", ret);
+		goto dmaengine_slave_config_fail;
+	}
+
+	gsi->tx.cb.userdata = gsi;
+	gsi->rx.cb.userdata = gsi;
+	gsi->req_chan = true;
+	return ret;
+
+dmaengine_slave_config_fail:
+	dma_release_channel(gsi->tx.ch);
+	dma_release_channel(gsi->rx.ch);
+	gsi->tx.ch = NULL;
+	gsi->rx.ch = NULL;
+	return ret;
+}
+EXPORT_SYMBOL_GPL(geni_gsi_common_request_channel);
 
 /* Sends gpii event or channel command */
 static int gpi_send_cmd(struct gpii *gpii,
@@ -1541,6 +1824,8 @@ static void gpi_process_imed_data_event(struct gpii_chan *gpii_chan,
 	gpi_desc = to_gpi_desc(vd);
 	spin_unlock_irqrestore(&gpii_chan->vc.lock, flags);
 
+	if (gpii->is_multi_desc)
+		gpii->num_msgs--;
 
 	/*
 	 * RP pointed by Event is to last TRE processed,
@@ -1563,22 +1848,32 @@ static void gpi_process_imed_data_event(struct gpii_chan *gpii_chan,
 	 */
 	chid = imed_event->chid;
 	if (gpii->unlock_tre_set) {
-		if (chid == GPI_RX_CHAN) {
-			if (imed_event->code == MSM_GPI_TCE_EOT)
-				goto gpi_free_desc;
-			else if (imed_event->code == MSM_GPI_TCE_UNEXP_ERR)
-				/*
-				 * In case of an error in a read transfer on a
-				 * shared se, unlock tre will not be processed
-				 * as channels go to bad state so tx desc should
-				 * be freed manually.
-				 */
-				gpi_free_chan_desc(gpii_tx_chan);
-			else
+		if (!gpii->is_multi_desc) {
+			if (chid == GPI_RX_CHAN) {
+				if (imed_event->code == MSM_GPI_TCE_EOT)
+					goto gpi_free_desc;
+				else if (imed_event->code == MSM_GPI_TCE_UNEXP_ERR)
+					/*
+					 * In case of an error in a read transfer on a
+					 * shared se, unlock tre will not be processed
+					 * as channels go to bad state so tx desc should
+					 * be freed manually.
+					 */
+					gpi_free_chan_desc(gpii_tx_chan);
+				else
+					return;
+			} else if (imed_event->code == MSM_GPI_TCE_EOT) {
 				return;
-		} else if (imed_event->code == MSM_GPI_TCE_EOT) {
-			return;
+			}
+		} else {
+			/*
+			 * Multi descriptor case waiting for unlock
+			 * tre eob, so not freeeing last descriptor
+			 */
+			if (gpii->num_msgs == 0)
+				return;
 		}
+
 	} else if (imed_event->code == MSM_GPI_TCE_EOB) {
 		goto gpi_free_desc;
 	}
@@ -1647,6 +1942,8 @@ static void gpi_process_xfer_compl_event(struct gpii_chan *gpii_chan,
 	gpi_desc = to_gpi_desc(vd);
 	spin_unlock_irqrestore(&gpii_chan->vc.lock, flags);
 
+	if (gpii->is_multi_desc)
+		gpii->num_msgs--;
 
 	/*
 	 * RP pointed by Event is to last TRE processed,
@@ -1669,28 +1966,37 @@ static void gpi_process_xfer_compl_event(struct gpii_chan *gpii_chan,
 	 */
 	chid = compl_event->chid;
 	if (gpii->unlock_tre_set) {
-		if (chid == GPI_RX_CHAN) {
-			if (compl_event->code == MSM_GPI_TCE_EOT)
-				goto gpi_free_desc;
-			else if (compl_event->code == MSM_GPI_TCE_UNEXP_ERR)
-				/*
-				 * In case of an error in a read transfer on a
-				 * shared se, unlock tre will not be processed
-				 * as channels go to bad state so tx desc should
-				 * be freed manually.
-				 */
-				gpi_free_chan_desc(gpii_tx_chan);
-			else
+		if (!gpii->is_multi_desc) {
+			if (chid == GPI_RX_CHAN) {
+				if (compl_event->code == MSM_GPI_TCE_EOT)
+					goto gpi_free_desc;
+				else if (compl_event->code == MSM_GPI_TCE_UNEXP_ERR)
+					/*
+					 * In case of an error in a read transfer on a
+					 * shared se, unlock tre will not be processed
+					 * as channels go to bad state so tx desc should
+					 * be freed manually.
+					 */
+					gpi_free_chan_desc(gpii_tx_chan);
+				else
+					return;
+			} else if (compl_event->code == MSM_GPI_TCE_EOT) {
 				return;
-		} else if (compl_event->code == MSM_GPI_TCE_EOT) {
-			return;
+			}
+		} else {
+			/*
+			 * Multi descriptor case waiting for unlock
+			 * tre eob, so not freeeing last descriptor
+			 */
+			if (gpii->num_msgs == 0)
+				return;
 		}
+
 	} else if (compl_event->code == MSM_GPI_TCE_EOB) {
 		if (!(gpii_chan->num_tre == 1 && gpii_chan->lock_tre_set)
 			&& (gpii->protocol != SE_PROTOCOL_UART))
 			goto gpi_free_desc;
 	}
-
 	tx_cb_param = vd->tx.callback_param;
 	if (vd->tx.callback && tx_cb_param) {
 		GPII_VERB(gpii, gpii_chan->chid,

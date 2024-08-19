@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2013-2021, Linux Foundation. All rights reserved.
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/acpi.h>
@@ -3820,6 +3820,7 @@ cell_put:
  */
 static int ufs_qcom_init(struct ufs_hba *hba)
 {
+	char type[5];
 	int err, host_id = 0;
 	struct device *dev = hba->dev;
 	struct ufs_qcom_host *host;
@@ -4021,9 +4022,21 @@ static int ufs_qcom_init(struct ufs_hba *hba)
 					  void __user *))ufs_qcom_ioctl;
 #endif
 
+	/*
+	 * Based on host_id, pass the appropriate device type
+	 * to register thermal cooling device.
+	 */
+
+	host_id = of_alias_get_id(hba->dev->of_node, "ufshc");
+	if ((host_id < 0) || (host_id > MAX_UFS_QCOM_HOSTS)) {
+		ufs_qcom_msg(ERR, hba->dev, "Failed to get host index %d\n", host_id);
+		host_id = 1;
+	}
+
+	snprintf(type, sizeof(type), "ufs%d", host_id);
 	ut->tcd = devm_thermal_of_cooling_device_register(dev,
 							  dev->of_node,
-							  "ufs",
+							  type,
 							  dev,
 							  &ufs_thermal_ops);
 	if (IS_ERR(ut->tcd))
@@ -4045,13 +4058,6 @@ static int ufs_qcom_init(struct ufs_hba *hba)
 
 	/* register minidump */
 	if (msm_minidump_enabled()) {
-		host_id = of_alias_get_id(hba->dev->of_node, "ufshc");
-
-		if ((host_id < 0) || (host_id > MAX_UFS_QCOM_HOSTS)) {
-			ufs_qcom_msg(ERR, hba->dev, "Failed to get host index %d\n", host_id);
-			host_id = 1;
-		}
-
 		ufs_qcom_register_minidump((uintptr_t)host,
 					sizeof(struct ufs_qcom_host), "UFS_QHOST", host_id);
 		ufs_qcom_register_minidump((uintptr_t)hba,
@@ -5403,14 +5409,20 @@ static void ufs_qcom_hook_prepare_command(void *param, struct ufs_hba *hba,
 #if IS_ENABLED(CONFIG_QTI_CRYPTO_FDE)
 	struct ice_data_setting setting;
 
-	if (!crypto_qti_ice_config_start(rq, &setting)) {
-		if ((rq_data_dir(rq) == WRITE) ? setting.encr_bypass : setting.decr_bypass) {
-			lrbp->crypto_key_slot = -1;
-		} else {
-			lrbp->crypto_key_slot = setting.crypto_data.key_index;
-			lrbp->data_unit_num = rq->bio->bi_iter.bi_sector >>
-					      ICE_CRYPTO_DATA_UNIT_4_KB;
+	if (!rq->crypt_keyslot) {
+		if (!crypto_qti_ice_config_start(rq, &setting)) {
+			if ((rq_data_dir(rq) == WRITE) ? setting.encr_bypass :
+					setting.decr_bypass) {
+				lrbp->crypto_key_slot = -1;
+			} else {
+				lrbp->crypto_key_slot = setting.crypto_data.key_index;
+				lrbp->data_unit_num = rq->bio->bi_iter.bi_sector >>
+						      ICE_CRYPTO_DATA_UNIT_4_KB;
+			}
 		}
+	} else {
+		lrbp->crypto_key_slot = blk_ksm_get_slot_idx(rq->crypt_keyslot);
+		lrbp->data_unit_num = rq->crypt_ctx->bc_dun[0];
 	}
 #endif
 }
@@ -5538,7 +5550,9 @@ static int ufs_qcom_probe(struct platform_device *pdev)
 	if (err)
 		ufs_qcom_msg(ERR, dev, "ufshcd_pltfrm_init() failed %d\n", err);
 
-	ufs_qcom_register_hooks();
+	if (!(of_property_read_bool(np, "secondary-storage")))
+		ufs_qcom_register_hooks();
+
 	return err;
 }
 
@@ -5654,8 +5668,16 @@ static int ufs_qcom_system_resume(struct device *dev)
 
 static int ufs_qcom_suspend_prepare(struct device *dev)
 {
-	struct ufs_hba *hba = dev_get_drvdata(dev);
-	struct ufs_qcom_host *host = ufshcd_get_variant(hba);
+	struct ufs_hba *hba;
+	struct ufs_qcom_host *host;
+
+	if (!is_bootdevice_ufs) {
+		dev_info(dev, "UFS is not boot dev.\n");
+		return 0;
+	}
+
+	hba = dev_get_drvdata(dev);
+	host = ufshcd_get_variant(hba);
 
 	/* For deep sleep, set spm level to lvl 5 because all
 	 * regulators is turned off in DS. For other senerios
@@ -5665,11 +5687,6 @@ static int ufs_qcom_suspend_prepare(struct device *dev)
 		hba->spm_lvl = UFS_PM_LVL_5;
 	else
 		hba->spm_lvl = host->spm_lvl_default;
-
-	if (!is_bootdevice_ufs) {
-		dev_info(dev, "UFS is not boot dev.\n");
-		return 0;
-	}
 
 	return ufshcd_suspend_prepare(dev);
 }

@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef MEM_BUF_IDS_H
@@ -16,6 +16,8 @@
 /* Future targets should receive a notification with the proper value */
 #define VMID_TUIVM (45)
 #define VMID_OEMVM (49)
+#define VMID_ROBOTICSVM1 (52)
+#define VMID_ROBOTICSVM2 (53)
 
 /*
  * @vmid - id assigned by hypervisor to uniquely identify a VM

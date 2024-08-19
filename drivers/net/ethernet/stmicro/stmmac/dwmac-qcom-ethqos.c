@@ -2,7 +2,7 @@
 
 // Copyright (c) 2018-19, Linaro Limited
 // Copyright (c) 2021, The Linux Foundation. All rights reserved.
-// Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+// Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
 
 #include <linux/module.h>
 #include <linux/of.h>
@@ -42,6 +42,8 @@
 static void ethqos_rgmii_io_macro_loopback(struct qcom_ethqos *ethqos,
 					   int mode);
 static int phy_digital_loopback_config(struct qcom_ethqos *ethqos, int speed, int config);
+static int qcom_ethqos_hib_restore(struct device *dev);
+static int qcom_ethqos_hib_freeze(struct device *dev);
 static char buf[2000];
 
 #define RGMII_IO_MACRO_DEBUG1		0x20
@@ -3031,6 +3033,8 @@ static int qcom_ethqos_probe(struct platform_device *pdev)
 
 	/* Read en_wol from device tree */
 	priv->en_wol = of_property_read_bool(np, "enable-wol");
+	if (of_property_read_bool(np, "disable-frame-preem"))
+		priv->dma_cap.fpesel = 0;
 
 	/* enable safety feature from device tree */
 	if (of_property_read_bool(np, "safety-feat") && priv->dma_cap.asp)
@@ -3086,7 +3090,14 @@ static int qcom_ethqos_remove(struct platform_device *pdev)
 	priv = qcom_ethqos_get_priv(ethqos);
 
 	ret = stmmac_pltfr_remove(pdev);
-	clk_disable_unprepare(ethqos->rgmii_clk);
+	if (ethqos->rgmii_clk)
+		clk_disable_unprepare(ethqos->rgmii_clk);
+
+	if (priv->plat->has_gmac4 && ethqos->phyaux_clk)
+		clk_disable_unprepare(ethqos->phyaux_clk);
+
+	if (priv->plat->has_gmac4 && ethqos->sgmiref_clk)
+		clk_disable_unprepare(ethqos->sgmiref_clk);
 
 	if (priv->plat->phy_intr_en_extn_stm)
 		free_irq(ethqos->phy_intr, ethqos);
@@ -3116,6 +3127,9 @@ static int qcom_ethqos_suspend(struct device *dev)
 		ETHQOSDBG("smmu return\n");
 		return 0;
 	}
+	if (pm_suspend_via_firmware())
+		return qcom_ethqos_hib_freeze(dev);
+
 #ifdef CONFIG_MSM_BOOT_TIME_MARKER
 	place_marker("M - Ethernet Suspend start");
 #endif
@@ -3162,6 +3176,7 @@ static int qcom_ethqos_suspend(struct device *dev)
 	place_marker("M - Ethernet Suspend End");
 #endif
 	ETHQOSDBG(" ret = %d\n", ret);
+	ethqos->curr_serdes_speed = 0;
 	return ret;
 }
 
@@ -3175,6 +3190,8 @@ static int qcom_ethqos_resume(struct device *dev)
 	ETHQOSDBG("Resume Enter\n");
 	if (of_device_is_compatible(dev->of_node, "qcom,emac-smmu-embedded"))
 		return 0;
+	if (pm_suspend_via_firmware())
+		return qcom_ethqos_hib_restore(dev);
 
 #ifdef CONFIG_MSM_BOOT_TIME_MARKER
 	place_marker("M - Ethernet Resume start");
@@ -3287,8 +3304,32 @@ static int qcom_ethqos_enable_clks(struct qcom_ethqos *ethqos, struct device *de
 			goto error_rgmii_get;
 		}
 	}
+	ethqos->sgmiref_clk = devm_clk_get(dev, "sgmi_ref");
+	if (IS_ERR(ethqos->sgmiref_clk)) {
+		dev_warn(dev, "Failed sgmi_ref\n");
+		ret = PTR_ERR(ethqos->sgmiref_clk);
+		goto error_sgmi_ref;
+	} else {
+		ret = clk_prepare_enable(ethqos->sgmiref_clk);
+		if (ret)
+			goto error_sgmi_ref;
+	}
+	ethqos->phyaux_clk = devm_clk_get(dev, "phyaux");
+	if (IS_ERR(ethqos->phyaux_clk)) {
+		dev_warn(dev,  "Failed phyaux\n");
+		ret = PTR_ERR(ethqos->phyaux_clk);
+		goto error_phyaux_ref;
+	} else {
+		ret = clk_prepare_enable(ethqos->phyaux_clk);
+		if (ret)
+			goto error_phyaux_ref;
+	}
 	return 0;
 
+error_phyaux_ref:
+	clk_disable_unprepare(ethqos->sgmiref_clk);
+error_sgmi_ref:
+	clk_disable_unprepare(ethqos->rgmii_clk);
 error_rgmii_get:
 	clk_disable_unprepare(priv->plat->pclk);
 error_pclk_get:
@@ -3310,6 +3351,12 @@ static void qcom_ethqos_disable_clks(struct qcom_ethqos *ethqos, struct device *
 
 	if (ethqos->rgmii_clk)
 		clk_disable_unprepare(ethqos->rgmii_clk);
+
+	if (priv->plat->has_gmac4 && ethqos->phyaux_clk)
+		clk_disable_unprepare(ethqos->phyaux_clk);
+
+	if (priv->plat->has_gmac4 && ethqos->sgmiref_clk)
+		clk_disable_unprepare(ethqos->sgmiref_clk);
 
 	ETHQOSINFO("Exit\n");
 }
@@ -3342,7 +3389,7 @@ static int qcom_ethqos_hib_restore(struct device *dev)
 
 	ret = ethqos_init_gpio(ethqos);
 	if (ret)
-		return ret;
+		ETHQOSINFO("GPIO init failed\n");
 
 	ret = qcom_ethqos_enable_clks(ethqos, dev);
 	if (ret)
@@ -3370,13 +3417,6 @@ static int qcom_ethqos_hib_restore(struct device *dev)
 
 	ret = priv->plat->init_pps(priv);
 #endif /* end of DWC_ETH_QOS_CONFIG_PTP */
-
-	/* issue software reset to device */
-	ret = stmmac_reset(priv, priv->ioaddr);
-	if (ret) {
-		dev_err(priv->device, "Failed to reset\n");
-		return ret;
-	}
 
 	if (!netif_running(ndev)) {
 		rtnl_lock();
@@ -3429,6 +3469,8 @@ static int qcom_ethqos_hib_freeze(struct device *dev)
 	ethqos_disable_regulators(ethqos);
 
 	ethqos_free_gpios(ethqos);
+
+	ethqos->curr_serdes_speed = 0;
 
 	ETHQOSINFO("end\n");
 

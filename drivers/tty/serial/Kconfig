@@ -974,6 +974,7 @@ config SERIAL_MSM_GENI
     tristate "MSM on-chip GENI HW based serial port support"
     depends on ARCH_QCOM
     depends on QCOM_GENI_SE
+    select SERIAL_CORE
 
 config SERIAL_VT8500
 	bool "VIA VT8500 on-chip serial port support"

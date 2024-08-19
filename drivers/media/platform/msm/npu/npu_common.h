@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2017-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _NPU_COMMON_H
@@ -95,12 +95,6 @@ struct npu_debugfs_ctx {
 	struct dentry *root;
 	uint32_t reg_off;
 	uint32_t reg_cnt;
-	uint8_t *log_buf;
-	struct mutex log_lock;
-	uint32_t log_num_bytes_buffered;
-	uint32_t log_read_index;
-	uint32_t log_write_index;
-	uint32_t log_buf_size;
 };
 
 struct npu_debugfs_reg_ctx {

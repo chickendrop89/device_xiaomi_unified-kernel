@@ -280,7 +280,7 @@ static int crypto_qti_program_key_v1(const struct ice_mmio_data *mmio_data,
 
 int crypto_qti_program_key(const struct ice_mmio_data *mmio_data,
 			   const struct blk_crypto_key *key, unsigned int slot,
-			   unsigned int data_unit_mask, int capid)
+			   unsigned int data_unit_mask, int capid, int storage_type)
 {
 	int err = 0;
 	union crypto_cfg cfg;
@@ -337,7 +337,7 @@ exit:
 EXPORT_SYMBOL(crypto_qti_program_key);
 
 int crypto_qti_invalidate_key(const struct ice_mmio_data *mmio_data,
-			      unsigned int slot)
+			      unsigned int slot, int storage_type)
 {
 	int err = 0;
 

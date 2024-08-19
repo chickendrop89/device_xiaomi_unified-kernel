@@ -791,7 +791,7 @@ static int smb23x_set_appropriate_usb_current(struct smb23x_chip *chip)
 static int smb23x_hw_init(struct smb23x_chip *chip)
 {
 	int rc, i = 0;
-	u8 tmp;
+	u8 tmp = 0;
 
 	rc = smb23x_enable_volatile_writes(chip);
 	if (rc < 0) {

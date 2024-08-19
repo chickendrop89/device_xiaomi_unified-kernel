@@ -61,6 +61,14 @@ static inline int qcom_rproc_set_dtb_firmware(struct rproc *rproc, const char *d
 {
 	return -EINVAL;
 }
+
+
+#endif
+
+#if IS_ENABLED(CONFIG_QCOM_Q6V5_PAS) && IS_ENABLED(CONFIG_QCOM_DS_SKIP_Q6_STOP)
+void adsp_set_ops_stop(struct rproc *rproc, bool suspend);
+#else
+static inline void adsp_set_ops_stop(struct rproc *rproc, bool suspend) { }
 #endif
 
 #endif

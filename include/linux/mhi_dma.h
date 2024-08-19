@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
-/* Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+/* Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -39,10 +39,12 @@ enum mhi_dma_function_type {
  * @MHI_DMA_EVENT_READY: DMA MHI is ready. After getting
  *	this event MHI Driver is expected to call to mhi_dma_start() API
  * @MHI_DMA_EVENT_DATA_AVAILABLE: Data available on MHI HOST channel
+ * @MHI_DMA_EVENT_SSR_RESET: SSR occurrence, need to reset channels
  */
 enum mhi_dma_event_type {
 	MHI_DMA_EVENT_READY,
 	MHI_DMA_EVENT_DATA_AVAILABLE,
+	MHI_DMA_EVENT_SSR_RESET,
 	MHI_DMA_EVENT_MAX,
 };
 

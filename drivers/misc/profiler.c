@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017-2018, 2020-2021 The Linux Foundation. All rights reserved.
-Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
 */
 
 #define pr_fmt(fmt) "PROFILER: %s: " fmt, __func__
@@ -25,17 +25,26 @@ Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
 #include <linux/clk.h>
 #include <linux/of_device.h>
 #include <linux/platform_device.h>
+#include <linux/delay.h>
 
 #define PROFILER_DEV			"profiler"
 
 static struct class *driver_class;
 static dev_t profiler_device_no;
+struct platform_device *ddr_pdev;
+
+static struct reg_offset offset_reg_values;
+static struct device_param_init dev_params;
+static bool bw_profiling_disabled;
 
 struct profiler_control {
 	struct device *pdev;
 	struct cdev cdev;
 	struct clk *clk;
 	struct mutex lock;
+	void __iomem *llcc_base;
+	void __iomem *gemnoc_base;
+	void __iomem *mmnoc_base;
 };
 
 static struct profiler_control *profiler;
@@ -71,7 +80,6 @@ static int bw_profiling_command(const void *req)
 
 	memcpy(bw_shm.vaddr, req, req_size);
 	qtee_shmbridge_flush_shm_buf(&bw_shm);
-
 	switch (qseos_cmd_id) {
 	case TZ_BW_SVC_START_ID:
 	case TZ_BW_SVC_GET_ID:
@@ -109,41 +117,136 @@ static int bw_profiling_start(struct tz_bw_svc_buf *bwbuf)
 	return bw_profiling_command(bwbuf);
 }
 
+
 static int bw_profiling_get(void __user *argp, struct tz_bw_svc_buf *bwbuf)
 {
-	int ret;
-	const int bufsize = sizeof(struct profiler_bw_cntrs_req)
-							- sizeof(uint32_t);
-	struct profiler_bw_cntrs_req cnt_buf;
+	int ret = 0;
 	struct qtee_shm buf_shm = {0};
+	if (bw_profiling_disabled) {
+		const int bufsize = sizeof(struct profiler_bw_cntrs_req_m)
+								- sizeof(uint32_t);
+		struct profiler_bw_cntrs_req_m cnt_buf;
 
-	memset(&cnt_buf, 0, sizeof(cnt_buf));
-	/* Allocate memory for get buffer */
-	ret = qtee_shmbridge_allocate_shm(PAGE_ALIGN(bufsize), &buf_shm);
-	if (ret) {
-		ret = -ENOMEM;
-		pr_err("shmbridge alloc buf failed\n");
-		goto out;
+		memset(&cnt_buf, 0, sizeof(cnt_buf));
+		/* Allocate memory for get buffer */
+		ret = qtee_shmbridge_allocate_shm(PAGE_ALIGN(bufsize), &buf_shm);
+		if (ret) {
+			ret = -ENOMEM;
+			pr_err("shmbridge alloc buf failed\n");
+			goto out;
+		}
+		/* Populate request data */
+		bwbuf->bwreq.get_req.cmd_id = TZ_BW_SVC_GET_ID;
+		bwbuf->bwreq.get_req.buf_ptr = buf_shm.paddr;
+		bwbuf->bwreq.get_req.buf_size = bufsize;
+		bwbuf->req_size = sizeof(struct tz_bw_svc_get_req);
+		qtee_shmbridge_flush_shm_buf(&buf_shm);
+		ret = bw_profiling_command(bwbuf);
+		if (ret) {
+			pr_err("bw_profiling_command failed\n");
+			goto out;
+		}
+		qtee_shmbridge_inv_shm_buf(&buf_shm);
+		memcpy(&cnt_buf, buf_shm.vaddr, bufsize);
+		if (copy_to_user(argp, &cnt_buf, sizeof(struct profiler_bw_cntrs_req_m)))
+			pr_err("copy_to_user failed\n");
+
+	} else {
+		int ch = 0;
+		int hf = 0;
+		int sf = 0;
+		int gc = 0;
+		const int bufsize = sizeof(struct profiler_bw_cntrs_req)
+								- sizeof(uint32_t);
+		struct profiler_bw_cntrs_req cnt_buf;
+		ret = qtee_shmbridge_allocate_shm(PAGE_ALIGN(bufsize), &buf_shm);
+		if (ret) {
+			ret = -ENOMEM;
+			pr_err("shmbridge alloc buf failed\n");
+			goto out;
+		}
+		/* Populate request data */
+		bwbuf->bwreq.get_req.cmd_id = TZ_BW_SVC_GET_ID;
+		bwbuf->bwreq.get_req.buf_ptr = buf_shm.paddr;
+		bwbuf->bwreq.get_req.buf_size = bufsize;
+		bwbuf->bwreq.get_req.type = 0;
+		bwbuf->req_size = sizeof(struct tz_bw_svc_get_req);
+		qtee_shmbridge_flush_shm_buf(&buf_shm);
+		ret = bw_profiling_command(bwbuf);
+		if (ret) {
+			pr_err("bw_profiling_command failed\n");
+			goto out;
+		}
+		qtee_shmbridge_inv_shm_buf(&buf_shm);
+
+		qtee_shmbridge_free_shm(&buf_shm);
+		memset(&cnt_buf, 0, sizeof(cnt_buf));
+
+		for (ch = 0; ch < dev_params.num_llcc_channels; ch++) {
+			profiler->llcc_base = devm_ioremap(profiler->pdev, dev_params.llcc_base
+						+ dev_params.llcc_map_size * ch,
+						dev_params.llcc_map_size);
+			cnt_buf.llcc_values[ch*2] = readl(profiler->llcc_base
+							+ offset_reg_values.llcc_offset[ch*2]);
+			cnt_buf.llcc_values[ch*2 + 1] = readl(profiler->llcc_base
+							+ offset_reg_values.llcc_offset[ch*2 + 1]);
+			cnt_buf.cabo_values[ch*2] = readl(profiler->llcc_base
+							+ offset_reg_values.cabo_offset[ch*2]);
+			cnt_buf.cabo_values[ch*2 + 1] = readl(profiler->llcc_base
+							+ offset_reg_values.cabo_offset[ch*2+1]);
+		}
+
+		profiler->gemnoc_base = devm_ioremap(profiler->pdev,
+							dev_params.gemnoc_base,
+							dev_params.gemnoc_map_size);
+		for (ch = 0; ch < dev_params.num_llcc_channels; ch++) {
+			for (gc = 0; gc < dev_params.num_gemnoc_metrics; gc++) {
+				cnt_buf.gemnoc_values[ch * dev_params.num_gemnoc_metrics + gc] =
+							readl(profiler->gemnoc_base
+							+ offset_reg_values.gemnoc_offset[
+								ch * dev_params.num_gemnoc_metrics
+							+ gc]);
+			}
+		}
+		profiler->mmnoc_base = devm_ioremap(profiler->pdev,
+						dev_params.mmnoc_base, dev_params.mmnoc_map_size);
+		for (hf = 0; hf < dev_params.num_hf_metrics; hf++) {
+			cnt_buf.mmnoc_hf_values[hf] = readl(profiler->mmnoc_base +
+							offset_reg_values.mmnoc_hf_offset[hf]);
+		}
+		for (sf = 0; sf < dev_params.num_sf_metrics; sf++) {
+			cnt_buf.mmnoc_sf_values[sf] = readl(profiler->mmnoc_base +
+							offset_reg_values.mmnoc_sf_offset[sf]);
+		}
+
+		/* Allocate memory for get buffer */
+		ret = qtee_shmbridge_allocate_shm(PAGE_ALIGN(bufsize), &buf_shm);
+		if (ret) {
+			ret = -ENOMEM;
+			pr_err("shmbridge alloc buf failed\n");
+			goto out;
+		}
+		/* Populate request data */
+		bwbuf->bwreq.get_req.cmd_id = TZ_BW_SVC_GET_ID;
+		bwbuf->bwreq.get_req.buf_ptr = buf_shm.paddr;
+		bwbuf->bwreq.get_req.buf_size = bufsize;
+		bwbuf->bwreq.get_req.type = 1;
+		bwbuf->req_size = sizeof(struct tz_bw_svc_get_req);
+		qtee_shmbridge_flush_shm_buf(&buf_shm);
+		ret = bw_profiling_command(bwbuf);
+		if (ret) {
+			pr_err("bw_profiling_command failed\n");
+			goto out;
+		}
+		qtee_shmbridge_inv_shm_buf(&buf_shm);
+		if (copy_to_user(argp, &cnt_buf, sizeof(struct profiler_bw_cntrs_req)))
+			pr_err("copy_to_user failed\n");
 	}
-	/* Populate request data */
-	bwbuf->bwreq.get_req.cmd_id = TZ_BW_SVC_GET_ID;
-	bwbuf->bwreq.get_req.buf_ptr = buf_shm.paddr;
-	bwbuf->bwreq.get_req.buf_size = bufsize;
-	bwbuf->req_size = sizeof(struct tz_bw_svc_get_req);
-	qtee_shmbridge_flush_shm_buf(&buf_shm);
-	ret = bw_profiling_command(bwbuf);
-	if (ret) {
-		pr_err("bw_profiling_command failed\n");
-		goto out;
-	}
-	qtee_shmbridge_inv_shm_buf(&buf_shm);
-	memcpy(&cnt_buf, buf_shm.vaddr, bufsize);
-	if (copy_to_user(argp, &cnt_buf, sizeof(struct profiler_bw_cntrs_req)))
-		pr_err("copy_to_user failed\n");
+
 out:
-	/* Free memory for response */
-	qtee_shmbridge_free_shm(&buf_shm);
-	return ret;
+		/* Free memory for response */
+		qtee_shmbridge_free_shm(&buf_shm);
+		return ret;
 }
 
 static int bw_profiling_stop(struct tz_bw_svc_buf *bwbuf)
@@ -158,9 +261,16 @@ static int profiler_get_bw_info(void __user *argp)
 	int ret = 0;
 	struct tz_bw_svc_buf *bwbuf = NULL;
 	struct profiler_bw_cntrs_req cnt_buf;
+	struct profiler_bw_cntrs_req_m cnt_buf_m;
 
-	ret = copy_from_user(&cnt_buf, argp,
+	if (bw_profiling_disabled) {
+		ret = copy_from_user(&cnt_buf_m, argp,
+				sizeof(struct profiler_bw_cntrs_req_m));
+	} else {
+		ret = copy_from_user(&cnt_buf, argp,
 				sizeof(struct profiler_bw_cntrs_req));
+	}
+
 	if (ret)
 		return ret;
 	/* Allocate memory for request */
@@ -168,25 +278,50 @@ static int profiler_get_bw_info(void __user *argp)
 	if (bwbuf == NULL)
 		return -ENOMEM;
 
-	switch (cnt_buf.cmd) {
-	case TZ_BW_SVC_START_ID:
-		ret = bw_profiling_start(bwbuf);
-		if (ret)
-			pr_err("bw_profiling_start Failed with ret: %d\n", ret);
-		break;
-	case TZ_BW_SVC_GET_ID:
-		ret = bw_profiling_get(argp, bwbuf);
-		if (ret)
-			pr_err("bw_profiling_get Failed with ret: %d\n", ret);
-		break;
-	case TZ_BW_SVC_STOP_ID:
-		ret = bw_profiling_stop(bwbuf);
-		if (ret)
-			pr_err("bw_profiling_stop Failed with ret: %d\n", ret);
-		break;
-	default:
-		pr_err("Invalid IOCTL: 0x%x\n", cnt_buf.cmd);
-		ret = -EINVAL;
+
+	if (!bw_profiling_disabled) {
+		bwbuf->bwreq.start_req.bwEnableFlags = cnt_buf.bwEnableFlags;
+		switch (cnt_buf.cmd) {
+		case TZ_BW_SVC_START_ID:
+			ret = bw_profiling_start(bwbuf);
+			if (ret)
+				pr_err("bw_profiling_start Failed with ret: %d\n", ret);
+			break;
+		case TZ_BW_SVC_GET_ID:
+			ret = bw_profiling_get(argp, bwbuf);
+			if (ret)
+				pr_err("bw_profiling_get Failed with ret: %d\n", ret);
+			break;
+		case TZ_BW_SVC_STOP_ID:
+			ret = bw_profiling_stop(bwbuf);
+			if (ret)
+				pr_err("bw_profiling_stop Failed with ret: %d\n", ret);
+			break;
+		default:
+			pr_err("Invalid IOCTL: 0x%x\n", cnt_buf.cmd);
+			ret = -EINVAL;
+		}
+	} else {
+		switch (cnt_buf_m.cmd) {
+		case TZ_BW_SVC_START_ID:
+			ret = bw_profiling_start(bwbuf);
+			if (ret)
+				pr_err("bw_profiling_start Failed with ret: %d\n", ret);
+			break;
+		case TZ_BW_SVC_GET_ID:
+			ret = bw_profiling_get(argp, bwbuf);
+			if (ret)
+				pr_err("bw_profiling_get Failed with ret: %d\n", ret);
+			break;
+		case TZ_BW_SVC_STOP_ID:
+			ret = bw_profiling_stop(bwbuf);
+			if (ret)
+				pr_err("bw_profiling_stop Failed with ret: %d\n", ret);
+			break;
+		default:
+			pr_err("Invalid IOCTL: 0x%x\n", cnt_buf_m.cmd);
+			ret = -EINVAL;
+		}
 	}
 	/* Free memory for command */
 	if (bwbuf != NULL) {
@@ -194,6 +329,23 @@ static int profiler_get_bw_info(void __user *argp)
 		bwbuf = NULL;
 	}
 	return ret;
+}
+
+static int profiler_set_bw_offsets(void __user *argp)
+{
+	int ret;
+
+	ret = copy_from_user(&offset_reg_values, argp,
+				sizeof(struct reg_offset));
+	return 0;
+}
+
+static int profiler_device_init(void __user *argp)
+{
+	int ret;
+
+	ret = copy_from_user(&dev_params, argp, sizeof(struct device_param_init));
+	return 0;
 }
 
 static int profiler_open(struct inode *inode, struct file *file)
@@ -224,10 +376,27 @@ static long profiler_ioctl(struct file *file,
 
 	switch (cmd) {
 	case PROFILER_IOCTL_GET_BW_INFO:
+		bw_profiling_disabled = false;
 		ret = profiler_get_bw_info(argp);
 		if (ret)
 			pr_err("failed get system bandwidth info: %d\n", ret);
 		break;
+
+	case PROFILER_IOCTL_SET_OFFSETS:
+		ret = profiler_set_bw_offsets(argp);
+		break;
+
+	case PROFILER_IOCTL_DEVICE_INIT:
+		ret = profiler_device_init(argp);
+		break;
+
+	case PROFILER_IOCTL_GET_BW_INFO_BC:
+		bw_profiling_disabled = true;
+		ret = profiler_get_bw_info(argp);
+		if (ret)
+			pr_err("failed get system bandwidth info: %d\n", ret);
+		break;
+
 	default:
 		pr_err("Invalid IOCTL: 0x%x\n", cmd);
 		return -EINVAL;

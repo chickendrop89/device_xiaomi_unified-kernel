@@ -66,6 +66,11 @@ int get_slate_boot_mode(void);
 bool is_slate_unload_only(void);
 
 /*
+ * update s2a gpio status
+ */
+void update_s2a_status(bool s2a_status_value);
+
+/*
  * Message header type - generic header structure
  */
 struct msg_header_t {

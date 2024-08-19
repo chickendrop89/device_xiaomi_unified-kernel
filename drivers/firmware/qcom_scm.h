@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /* Copyright (c) 2010-2015,2019,2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 #ifndef __QCOM_SCM_INT_H
 #define __QCOM_SCM_INT_H
@@ -212,6 +212,7 @@ extern int scm_legacy_call(struct device *dev, const struct qcom_scm_desc *desc,
 #define QCOM_SCM_CAMERA_PROTECT_PHY_LANES	0x07
 #define QCOM_SCM_CAMERA_TOPOLOGY                0x08
 #define QCOM_SCM_CAMERA_STREAM_NOTIF            0x09
+#define QCOM_SCM_CAMERA_UPDATE_CAMNOC_QOS	0x0A
 
 #define QCOM_SCM_SVC_WAITQ			0x24
 #define QCOM_SCM_WAITQ_ACK			0x01

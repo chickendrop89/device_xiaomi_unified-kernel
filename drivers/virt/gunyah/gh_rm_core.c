@@ -78,6 +78,8 @@ const static struct {
 	{GH_CPUSYS_VM, "cpusys_vm", "qcom,cpusysvm"},
 	{GH_OEM_VM, "oem_vm", "qcom,oemvm"},
 	{GH_AUTO_VM, "autoghgvm", "qcom,autoghgvm"},
+	{GH_ROBOTICS_VM1, "roboticsvm1", "qcom,roboticsvm1"},
+	{GH_ROBOTICS_VM2, "roboticsvm2", "qcom,roboticsvm2"},
 };
 
 static struct task_struct *gh_rm_drv_recv_task;

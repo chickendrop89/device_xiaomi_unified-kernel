@@ -925,6 +925,11 @@ static int cpucc_driver_probe(struct platform_device *pdev)
 		}
 		data->hws[i] = cpu_clks_hws[i];
 		devm_clk_regmap_list_node(dev, to_clk_regmap(cpu_clks_hws[i]));
+
+		ret = clk_hw_debug_register(dev, cpu_clks_hws[i]);
+		if (ret)
+			dev_warn(dev, "Failed to add %s to debug list\n",
+					qcom_clk_hw_get_name(cpu_clks_hws[i]));
 	}
 
 	ret = of_clk_add_hw_provider(dev->of_node, of_clk_hw_onecell_get, data);

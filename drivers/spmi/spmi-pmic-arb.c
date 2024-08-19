@@ -1634,7 +1634,7 @@ static int spmi_pmic_arb_probe(struct platform_device *pdev)
 	}
 
 	core = devm_ioremap(&ctrl->dev, res->start, resource_size(res));
-	if (IS_ERR(core)) {
+	if (IS_ERR_OR_NULL(core)) {
 		err = PTR_ERR(core);
 		goto err_put_ctrl;
 	}

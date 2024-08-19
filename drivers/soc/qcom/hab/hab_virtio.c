@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 #include <linux/module.h>
 #include <linux/virtio.h>
@@ -11,6 +11,7 @@
 #include <linux/cma.h>
 
 #include "hab_virtio.h" /* requires hab.h */
+#include "hab_trace_os.h"
 
 #define HAB_VIRTIO_DEVICE_ID_HAB	88
 #define HAB_VIRTIO_DEVICE_ID_BUFFERQ	89
@@ -129,6 +130,8 @@ static void virthab_recv_txq(struct virtqueue *vq)
 	if (!vpc)
 		return;
 
+	trace_hab_recv_txq_start(vpc->pchan);
+
 	spin_lock_irqsave(&vpc->lock[HAB_PCHAN_TX_VQ], flags);
 	if (vpc->pchan_ready) {
 		if (vq != vpc->vq[HAB_PCHAN_TX_VQ])
@@ -181,6 +184,9 @@ static void virthab_recv_txq(struct virtqueue *vq)
 		}
 	}
 	spin_unlock_irqrestore(&vpc->lock[HAB_PCHAN_TX_VQ], flags);
+
+	trace_hab_recv_txq_end(vpc->pchan);
+
 	wake_up(&vpc->out_wq);
 }
 
@@ -204,6 +210,8 @@ static void virthab_recv_rxq(unsigned long p)
 	if (vq != vpc->vq[HAB_PCHAN_RX_VQ])
 		pr_err("%s failed to match rxq %pK expecting %pK\n",
 			vq->name, vq, vpc->vq[HAB_PCHAN_RX_VQ]);
+
+	trace_hab_recv_rxq_start(vpc->pchan);
 
 	spin_lock(&vpc->lock[HAB_PCHAN_RX_VQ]);
 
@@ -236,9 +244,17 @@ static void virthab_recv_rxq(unsigned long p)
 		else {
 			/* parse and handle the input */
 			spin_unlock(&vpc->lock[HAB_PCHAN_RX_VQ]);
+			trace_hab_pchan_recv_start(pchan);
 			rc = hab_msg_recv(pchan, (struct hab_header *)inbuf);
-			pchan->sequence_rx = ((struct hab_header *)inbuf)->sequence;
+
 			spin_lock(&vpc->lock[HAB_PCHAN_RX_VQ]);
+			if (pchan->sequence_rx + 1 != ((struct hab_header *)inbuf)->sequence)
+				pr_err("%s: expected sequence_rx is %u, received is %u\n",
+						pchan->name,
+						pchan->sequence_rx,
+						((struct hab_header *)inbuf)->sequence);
+			pchan->sequence_rx = ((struct hab_header *)inbuf)->sequence;
+
 			if (rc && rc != -EINVAL)
 				pr_err("%s hab_msg_recv wrong %d\n",
 					pchan->name, rc);
@@ -264,6 +280,8 @@ static void virthab_recv_rxq(unsigned long p)
 
 	}
 	spin_unlock(&vpc->lock[HAB_PCHAN_RX_VQ]);
+
+	trace_hab_recv_rxq_end(vpc->pchan);
 }
 
 static void virthab_recv_rxq_task(struct virtqueue *vq)
@@ -274,7 +292,7 @@ static void virthab_recv_rxq_task(struct virtqueue *vq)
 	if (!vpc)
 		return;
 
-	tasklet_schedule(&vpc->task);
+	tasklet_hi_schedule(&vpc->task);
 }
 
 static void init_pool_list(void *pool, int buf_size, int buf_num,
@@ -913,18 +931,22 @@ void dump_hab_wq(struct physical_channel *pchan) {};
 
 static struct vh_buf_header *get_vh_buf_header(spinlock_t *lock,
 			unsigned long *irq_flags, struct list_head *list,
-			wait_queue_head_t *wq, int *cnt)
+			wait_queue_head_t *wq, int *cnt,
+			int nonblocking_flag)
 {
 	struct vh_buf_header *hd = NULL;
 	unsigned long flags = *irq_flags;
+
+	if (list_empty(list) && nonblocking_flag)
+		return ERR_PTR(-EAGAIN);
 
 	while (list_empty(list)) {
 		spin_unlock_irqrestore(lock, flags);
 		wait_event(*wq, !list_empty(list));
 		spin_lock_irqsave(lock, flags);
 	}
+
 	hd = list_first_entry(list, struct vh_buf_header, node);
-	BUG_ON(!hd);
 	list_del(&hd->node);
 
 	*irq_flags = flags;
@@ -933,8 +955,8 @@ static struct vh_buf_header *get_vh_buf_header(spinlock_t *lock,
 }
 
 int physical_channel_send(struct physical_channel *pchan,
-			struct hab_header *header,
-			void *payload)
+			struct hab_header *header, void *payload,
+			unsigned int flags)
 {
 	size_t sizebytes = HAB_HEADER_GET_SIZE(*header);
 	struct virtio_pchan_link *link =
@@ -943,8 +965,9 @@ int physical_channel_send(struct physical_channel *pchan,
 	struct scatterlist sgout[1];
 	char *outbuf = NULL;
 	int rc;
-	unsigned long flags;
+	unsigned long lock_flags;
 	struct vh_buf_header *hd = NULL;
+	int nonblocking_flag = flags & HABMM_SOCKET_SEND_FLAGS_NON_BLOCKING;
 
 	if (link->vpc == NULL) {
 		pr_err("%s: %s link->vpc not ready\n", __func__, pchan->name);
@@ -958,23 +981,33 @@ int physical_channel_send(struct physical_channel *pchan,
 		return -EINVAL;
 	}
 
-	spin_lock_irqsave(&vpc->lock[HAB_PCHAN_TX_VQ], flags);
+	trace_hab_pchan_send_start(pchan);
+
+	spin_lock_irqsave(&vpc->lock[HAB_PCHAN_TX_VQ], lock_flags);
 	if (vpc->pchan_ready) {
 		/* pick the available outbuf */
 		if (sizebytes <= OUT_SMALL_BUF_SIZE) {
 			hd = get_vh_buf_header(&vpc->lock[HAB_PCHAN_TX_VQ],
-						&flags, &vpc->s_list,
-						&vpc->out_wq, &vpc->s_cnt);
+						&lock_flags, &vpc->s_list,
+						&vpc->out_wq, &vpc->s_cnt,
+						nonblocking_flag);
 		} else if (sizebytes <= OUT_MEDIUM_BUF_NUM) {
 			hd = get_vh_buf_header(&vpc->lock[HAB_PCHAN_TX_VQ],
-						&flags, &vpc->m_list,
-						&vpc->out_wq, &vpc->m_cnt);
+						&lock_flags, &vpc->m_list,
+						&vpc->out_wq, &vpc->m_cnt,
+						nonblocking_flag);
 		} else {
 			hd = get_vh_buf_header(&vpc->lock[HAB_PCHAN_TX_VQ],
-						&flags, &vpc->l_list,
-						&vpc->out_wq, &vpc->l_cnt);
+						&lock_flags, &vpc->l_list,
+						&vpc->out_wq, &vpc->l_cnt,
+						nonblocking_flag);
 		}
-		BUG_ON(!hd);
+
+		if (IS_ERR(hd) && nonblocking_flag) {
+			spin_unlock_irqrestore(&vpc->lock[HAB_PCHAN_TX_VQ], lock_flags);
+			pr_info("get_vh_buf_header failed in non-blocking mode\n");
+			return PTR_ERR(hd);
+		}
 
 		if (HAB_HEADER_GET_TYPE(*header) == HAB_PAYLOAD_TYPE_PROFILE) {
 			struct habmm_xing_vm_stat *pstat =
@@ -1000,6 +1033,7 @@ int physical_channel_send(struct physical_channel *pchan,
 		rc = virtqueue_add_outbuf(vpc->vq[HAB_PCHAN_TX_VQ], sgout, 1,
 							hd, GFP_ATOMIC);
 		if (!rc) {
+			trace_hab_pchan_send_done(pchan);
 			rc = virtqueue_kick(vpc->vq[HAB_PCHAN_TX_VQ]);
 			if (!rc)
 				pr_err("failed to kick outbuf to PVM %d\n", rc);
@@ -1010,7 +1044,7 @@ int physical_channel_send(struct physical_channel *pchan,
 		pr_err("%s pchan not ready\n", pchan->name);
 		rc = -ENODEV;
 	}
-	spin_unlock_irqrestore(&vpc->lock[HAB_PCHAN_TX_VQ], flags);
+	spin_unlock_irqrestore(&vpc->lock[HAB_PCHAN_TX_VQ], lock_flags);
 
 	return 0;
 }
@@ -1135,8 +1169,8 @@ int habhyp_commdev_alloc(void **commdev, int is_be, char *name, int vmid_remote,
 
 int habhyp_commdev_dealloc(void *commdev)
 {
-	struct virtio_pchan_link *link = commdev;
-	struct physical_channel *pchan = link->pchan;
+	struct physical_channel *pchan = commdev;
+	struct virtio_pchan_link *link = pchan->hyp_data;
 
 	pr_info("free commdev %s\n", pchan->name);
 	link->pchan = NULL;

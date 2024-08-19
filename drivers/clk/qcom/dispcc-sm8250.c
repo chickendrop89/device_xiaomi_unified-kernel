@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2018-2020, 2022, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/clk-provider.h>
@@ -1717,6 +1717,11 @@ static int disp_cc_sm8250_fixup(struct platform_device *pdev,
 		disp_cc_mdss_edp_pixel_clk_src.clkr.vdd_data.rate_max[VDD_NOMINAL] = 675000;
 	}
 
+	if (of_device_is_compatible(pdev->dev.of_node, "qcom,sm8150-dispcc")) {
+		disp_cc_sm8250_desc.gdscs = NULL;
+		disp_cc_sm8250_desc.num_gdscs = 0;
+	}
+
 	return 0;
 }
 
@@ -1729,6 +1734,9 @@ static int disp_cc_sm8250_probe(struct platform_device *pdev)
 	if (IS_ERR(regmap))
 		return PTR_ERR(regmap);
 
+	ret = register_qcom_clks_pm(pdev, true, &disp_cc_sm8250_desc);
+	if (ret)
+		dev_err(&pdev->dev, "Failed to register for pm ops\n");
 
 	ret = disp_cc_sm8250_fixup(pdev, regmap);
 	if (ret)
@@ -1737,24 +1745,14 @@ static int disp_cc_sm8250_probe(struct platform_device *pdev)
 	clk_lucid_pll_configure(&disp_cc_pll0, regmap, disp_cc_pll0.config);
 	clk_lucid_pll_configure(&disp_cc_pll1, regmap, disp_cc_pll1.config);
 
-	/* Enable clock gating for MDP clocks */
-	regmap_update_bits(regmap, 0x8000, 0x10, 0x10);
-
-	/*
-	 *Keep clocks always enabled
-	 *	disp_cc_xo_clk
-	 */
-	regmap_update_bits(regmap, 0x605c, BIT(0), BIT(0));
+	/* Enabling always ON clocks */
+	clk_restore_critical_clocks(&pdev->dev);
 
 	ret = qcom_cc_really_probe(pdev, &disp_cc_sm8250_desc, regmap);
 	if (ret) {
 		dev_err(&pdev->dev, "Failed to register DISP CC clocks\n");
 		return ret;
 	}
-
-	ret = register_qcom_clks_pm(pdev, false, &disp_cc_sm8250_desc);
-	if (ret)
-		dev_err(&pdev->dev, "Failed to register for pm ops\n");
 
 	pm_runtime_put_sync(&pdev->dev);
 	dev_info(&pdev->dev, "Registered DISP CC clocks\n");

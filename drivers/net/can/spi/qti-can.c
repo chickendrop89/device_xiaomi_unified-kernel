@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 
 /* Copyright (c) 2015-2021, The Linux Foundation. All rights reserved. */
-/* Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved. */
+/* Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved. */
 
 #include <linux/interrupt.h>
 #include <linux/module.h>
@@ -50,9 +50,15 @@
 #define CALYPSO_MAX_CAN_CLK_FREQ	40000000 /* 40MHz */
 #define TIME_REQUEST_PERIOD         (60000) /* 60 Seconds */
 
+#define PTP_REG_BASE				0x23047008
+
+#define MAC_STNSR_TSSS_LPOS 0
+#define MAC_STNSR_TSSS_HPOS 30
+
 static int static_pos_checksum_en;
 static int dynamic_pos_checksum_en;
 static int checksum_enable;
+void __iomem *ptp_base_addr;
 
 struct qti_can {
 	struct net_device	**netdev;
@@ -77,6 +83,7 @@ struct qti_can {
 	int bits_per_word;
 	int reset_delay_msec;
 	int reset;
+	int ts_conf;
 	bool support_can_fd;
 	bool use_qtimer;
 	bool can_fw_cmd_timeout_req;
@@ -155,6 +162,7 @@ struct spi_miso { /* TLV for MISO line */
 #define IOCTL_BOOT_ROM_UPGRADE_DATA	(SIOCDEVPRIVATE + 12)
 #define IOCTL_END_BOOT_ROM_UPGRADE	(SIOCDEVPRIVATE + 13)
 #define IOCTL_END_FW_UPDATE_FILE	(SIOCDEVPRIVATE + 14)
+#define IOCTL_TIMESTAMP_CONF		(SIOCDEVPRIVATE + 15)
 
 #define IFR_DATA_OFFSET		0x100
 struct can_fw_resp {
@@ -295,6 +303,30 @@ struct qti_can_ioctl_req {
 
 static int qti_can_rx_message(struct qti_can *priv_data);
 
+u64 getValue(u64 data, u8 lbit, u8 hbit)
+{
+	return (((data) >> (lbit)) & (~(~0 << ((hbit) - (lbit) + 1))));
+}
+
+u64 qti_can_get_ptp_time(struct qti_can *priv_data)
+{
+	u64  ret = 0;
+	u64  gptp_time_sec_pre, gptp_time_ns, gptp_time_sec_cur;
+
+	/* Reading PTP time in nSec from register */
+	while (1) {
+		gptp_time_sec_pre = readl(ptp_base_addr);
+		gptp_time_ns = readl(ptp_base_addr + sizeof(uint32_t));
+		gptp_time_sec_cur = readl(ptp_base_addr);
+		if (gptp_time_sec_cur == gptp_time_sec_pre)
+			break;
+	}
+	ret = getValue(gptp_time_ns, MAC_STNSR_TSSS_LPOS, MAC_STNSR_TSSS_HPOS);
+	ret = ret + (gptp_time_sec_cur * 1000000000ull);
+
+	return ret;
+}
+
 static irqreturn_t qti_can_irq(int irq, void *priv)
 {
 	struct qti_can *priv_data = priv;
@@ -380,7 +412,10 @@ static void qti_canfd_receive_frame(struct qti_can *priv_data,
 			disp_disc_cntr = 0;
 		}
 
-		nsec = ms_to_ktime(ts_offset_corrected);
+		if (priv_data->ts_conf == 0)
+			nsec = ms_to_ktime(frame->ts);
+		else
+			nsec = ms_to_ktime(ts_offset_corrected);
 		skt = skb_hwtstamps(skb);
 		skt->hwtstamp = nsec;
 		skb->tstamp = nsec;
@@ -446,7 +481,10 @@ static void qti_can_receive_frame(struct qti_can *priv_data,
 			disp_disc_cntr = 0;
 		}
 
-		nsec = ms_to_ktime(ts_offset_corrected);
+		if (priv_data->ts_conf == 0)
+			nsec = ms_to_ktime(frame->ts);
+		else
+			nsec = ms_to_ktime(ts_offset_corrected);
 		skt = skb_hwtstamps(skb);
 		skt->hwtstamp = nsec;
 		skb->tstamp = nsec;
@@ -618,42 +656,52 @@ static int qti_can_process_response(struct qti_can *priv_data,
 		ret |= (fw_resp->min & 0xF) << 4;
 		ret |= (fw_resp->sub_min & 0xF);
 	} else if (resp->cmd == CMD_UPDATE_TIME_INFO) {
-		struct can_time_info *time_data =
-			(struct can_time_info *)resp->data;
-		if (priv_data->use_qtimer)
-			mstime = div_u64(qtimer_time(), NSEC_PER_MSEC);
-		else
-			mstime = ktime_to_ms(ktime_get_boottime());
+		if (priv_data->ts_conf != 0) {
+			struct can_time_info *time_data = (struct can_time_info *)resp->data;
 
-		priv_data->time_diff = mstime - (le64_to_cpu(time_data->time));
-
-		if (first_offset_est == 1) {
-			prev_time_diff = priv_data->time_diff;
-			first_offset_est = 0;
-		}
-
-		offset_variation = priv_data->time_diff -
-					prev_time_diff;
-
-		if (offset_variation > TIME_OFFSET_MAX_THD ||
-		    offset_variation < TIME_OFFSET_MIN_THD) {
-			if (offset_print_cntr < TIMESTAMP_PRINT_CNTR) {
-				dev_info(&priv_data->spidev->dev,
-					 "Off Exceeded: Curr off is %lld\n",
-					 priv_data->time_diff);
-				dev_info(&priv_data->spidev->dev,
-					 "Prev off is %lld\n",
-				prev_time_diff);
-				offset_print_cntr++;
+			if (priv_data->ts_conf == 1) {
+				if (priv_data->use_qtimer)
+					mstime = div_u64(qtimer_time(), NSEC_PER_MSEC);
+				else
+					mstime = ktime_to_ms(ktime_get_boottime());
+			} else if (priv_data->ts_conf == 2) {
+				/* PTP time is in nano second.*/
+				/* Need to convert it in millisecond*/
+				mstime = (qti_can_get_ptp_time(priv_data) / 1000000uL);
+			} else {
+				dev_info(&priv_data->spidev->dev, "Incorrect timestamp source\n");
+				mstime = 0;
 			}
-			/* Set curr off to prev off if */
-			/* variation is beyond threshold */
-			priv_data->time_diff = prev_time_diff;
+			priv_data->time_diff = mstime - (le64_to_cpu(time_data->time));
 
-		} else {
-			/* Set prev off to curr off if */
-			/* variation is within threshold */
-			prev_time_diff = priv_data->time_diff;
+			if (first_offset_est == 1) {
+				prev_time_diff = priv_data->time_diff;
+				first_offset_est = 0;
+			}
+
+			offset_variation = priv_data->time_diff -
+						prev_time_diff;
+
+			if (offset_variation > TIME_OFFSET_MAX_THD ||
+			    offset_variation < TIME_OFFSET_MIN_THD) {
+				if (offset_print_cntr < TIMESTAMP_PRINT_CNTR) {
+					dev_info(&priv_data->spidev->dev,
+						 "Off Exceeded: Curr off is %lld\n",
+						priv_data->time_diff);
+					dev_info(&priv_data->spidev->dev,
+						 "Prev off is %lld\n",
+					prev_time_diff);
+					offset_print_cntr++;
+				}
+				/* Set curr off to prev off if */
+				/* variation is beyond threshold */
+				priv_data->time_diff = prev_time_diff;
+
+			} else {
+				/* Set prev off to curr off if */
+				/* variation is within threshold */
+				prev_time_diff = priv_data->time_diff;
+			}
 		}
 	}
 
@@ -866,7 +914,7 @@ static int qti_can_do_spi_transaction(struct qti_can *priv_data)
 	struct spi_transfer *xfer;
 	struct spi_message *msg;
 	struct device *dev;
-	int ret;
+	int ret = -1;
 	int i = 0;
 	u8 tx_checksum = 0;
 	int checksum_tx_len = 0;
@@ -1583,6 +1631,7 @@ static int qti_can_netdev_do_ioctl(struct net_device *netdev,
 	int *mode;
 	int ret = -EINVAL;
 	struct spi_device *spi;
+	int *ts_conf;
 
 	netdev_priv_data = netdev_priv(netdev);
 	priv_data = netdev_priv_data->qti_can;
@@ -1644,9 +1693,30 @@ static int qti_can_netdev_do_ioctl(struct net_device *netdev,
 	case IOCTL_END_FW_UPDATE_FILE:
 		ret = qti_can_do_blocking_ioctl(netdev, ifr, cmd);
 		break;
+	case IOCTL_TIMESTAMP_CONF:
+		if (!ifr)
+			return -EINVAL;
+		if (ifr->ifr_data > (void __user *)IFR_DATA_OFFSET) {
+			mutex_lock(&priv_data->spi_lock);
+			ts_conf = kzalloc(sizeof(*ts_conf), GFP_KERNEL);
+			if (!ts_conf) {
+				mutex_unlock(&priv_data->spi_lock);
+				return -ENOMEM;
+			}
+			if (copy_from_user(ts_conf, ifr->ifr_data, sizeof(int))) {
+				mutex_unlock(&priv_data->spi_lock);
+				kfree(ts_conf);
+				return -EFAULT;
+			}
+			priv_data->ts_conf = *ts_conf;
+			dev_info(&priv_data->spidev->dev, "timestamp Configuration %d\n",
+				 priv_data->ts_conf);
+			kfree(ts_conf);
+			mutex_unlock(&priv_data->spi_lock);
+		}
+		break;
 	}
 	dev_dbg(&priv_data->spidev->dev, "%s ret %d\n", __func__, ret);
-
 	return ret;
 }
 
@@ -1834,7 +1904,7 @@ static int qti_can_query_probe(struct qti_can *priv_data)
 		priv_data->assembly_buffer_size = 0;
 		retry++;
 	}
-	if (priv_data->time_sync_from_soc_to_mcu && query_err == 0)
+	if (priv_data->time_sync_from_soc_to_mcu && !query_err)
 		Init_timer_thread(priv_data);
 	return query_err;
 }
@@ -1971,6 +2041,11 @@ static int qti_can_probe(struct spi_device *spi)
 		}
 	}
 
+	ptp_base_addr = ioremap(PTP_REG_BASE, sizeof(uint64_t));
+
+	if (!ptp_base_addr)
+		dev_err(&priv_data->spidev->dev, "ioremap for qti-can PTP failed\r\n");
+
 	err = request_threaded_irq(spi->irq, NULL, qti_can_irq,
 				   IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
 				   "qti-can", priv_data);
@@ -1991,6 +2066,9 @@ static int qti_can_probe(struct spi_device *spi)
 	}
 	/* Initializing wake_irq_en with false to recive SPI data on IRQ */
 	priv_data->wake_irq_en = false;
+
+	/*By default MCU timestamp is configured*/
+	priv_data->ts_conf = 0;
 	return 0;
 
 free_irq:
@@ -2036,12 +2114,13 @@ static void qti_can_shutdown(struct spi_device *spi)
 	priv_data->wake_irq_en = true;
 	if (priv_data->timer_thread)
 		kthread_stop(priv_data->timer_thread);
+	iounmap(ptp_base_addr);
 }
 
 static int qti_can_add_filter(struct device *dev, struct can_filter_req *filter_request)
 {
 	char *tx_buf, *rx_buf;
-	int ret;
+	int ret = -1;
 	struct spi_mosi *req;
 	struct can_filter_req *add_filter;
 
@@ -2051,26 +2130,28 @@ static int qti_can_add_filter(struct device *dev, struct can_filter_req *filter_
 	if (spi)
 		priv_data = spi_get_drvdata(spi);
 
-	mutex_lock(&priv_data->spi_lock);
-	tx_buf = priv_data->tx_buf;
-	rx_buf = priv_data->rx_buf;
-	memset(tx_buf, 0, XFER_BUFFER_SIZE);
-	memset(rx_buf, 0, XFER_BUFFER_SIZE);
-	priv_data->xfer_length = XFER_BUFFER_SIZE;
+	if (priv_data) {
+		mutex_lock(&priv_data->spi_lock);
+		tx_buf = priv_data->tx_buf;
+		rx_buf = priv_data->rx_buf;
+		memset(tx_buf, 0, XFER_BUFFER_SIZE);
+		memset(rx_buf, 0, XFER_BUFFER_SIZE);
+		priv_data->xfer_length = XFER_BUFFER_SIZE;
 
-	req = (struct spi_mosi *)tx_buf;
+		req = (struct spi_mosi *)tx_buf;
 
-	req->len = sizeof(struct can_filter_req);
-	req->seq = atomic_inc_return(&priv_data->msg_seq);
+		req->len = sizeof(struct can_filter_req);
+		req->seq = atomic_inc_return(&priv_data->msg_seq);
 
-	add_filter = (struct can_filter_req *)req->data;
-	add_filter->can_if = filter_request->can_if;
-	add_filter->mid = filter_request->mid;
-	add_filter->mask = filter_request->mask;
+		add_filter = (struct can_filter_req *)req->data;
+		add_filter->can_if = filter_request->can_if;
+		add_filter->mid = filter_request->mid;
+		add_filter->mask = filter_request->mask;
 
-	ret = qti_can_do_spi_transaction(priv_data);
+		ret = qti_can_do_spi_transaction(priv_data);
 
-	mutex_unlock(&priv_data->spi_lock);
+		mutex_unlock(&priv_data->spi_lock);
+	}
 	return ret;
 }
 
@@ -2110,19 +2191,23 @@ static int qti_can_restore(struct device *dev)
 		ret = -1;
 	}
 
-	priv_data->probe_query_resp = false;
-	while ((query_err != 0) && (retry < QTI_CAN_FW_QUERY_RETRY_COUNT) &&
-	       (!(priv_data->probe_query_resp))) {
-		dev_dbg(dev, "Trying to query fw version %d\n", retry);
-		query_err = qti_can_query_firmware_version(priv_data);
-		priv_data->assembly_buffer_size = 0;
-		retry++;
-	}
-	dev_info(dev, "Retry count for fw version query is %d\n", retry);
-	if (query_err) {
-		dev_err(&priv_data->spidev->dev, "QTI CAN probe failed\n");
-		err = -ENODEV;
-		goto free_irq;
+	if (priv_data) {
+		priv_data->probe_query_resp = false;
+
+		while ((query_err != 0) && (retry < QTI_CAN_FW_QUERY_RETRY_COUNT) &&
+		       (!(priv_data->probe_query_resp))) {
+			dev_dbg(dev, "Trying to query fw version %d\n", retry);
+			query_err = qti_can_query_firmware_version(priv_data);
+			priv_data->assembly_buffer_size = 0;
+			retry++;
+		}
+		dev_info(dev, "Retry count for fw version query is %d\n", retry);
+		if (query_err) {
+			dev_err(&priv_data->spidev->dev, "QTI CAN probe failed\n");
+			err = -ENODEV;
+			goto free_irq;
+		}
+
 	}
 
 	if (priv_data->univ_acc_filter_flag) {

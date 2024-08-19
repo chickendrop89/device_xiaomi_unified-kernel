@@ -2,6 +2,7 @@
 /*
  * Copyright (c) 2013-2021, The Linux Foundation. All rights reserved.
  * Copyright (c) 2021-2022, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 /*
@@ -2585,6 +2586,8 @@ enum ipa_ep_desc_type_enum_v01 {
 	DATA_EP_DESC_TYPE_TETH_RMNET_PROD_V01 = 0x09,
 	DATA_EP_DESC_TYPE_EMB_FLOW_CTL_CONS_V01 = 0x0A,
 	DATA_EP_DESC_TYPE_EMB_FLOW_CTL_PROD_V01 = 0x0B,
+	DATA_EP_DESC_TYPE_TETH_LL_CONS_V01 = 0x0C,
+	DATA_EP_DESC_TYPE_TETH_LL_PROD_V01 = 0x0D,
 	IPA_EP_DESC_TYPE_ENUM_MAX_VAL_V01 = IPA_INT_MAX,
 };
 

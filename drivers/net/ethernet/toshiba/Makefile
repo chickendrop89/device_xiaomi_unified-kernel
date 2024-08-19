@@ -9,3 +9,4 @@ ps3_gelic-objs += ps3_gelic_net.o $(gelic_wireless-y)
 spidernet-y += spider_net.o spider_net_ethtool.o
 obj-$(CONFIG_SPIDER_NET) += spidernet.o
 obj-$(CONFIG_TC35815) += tc35815.o
+obj-y += tc956x/

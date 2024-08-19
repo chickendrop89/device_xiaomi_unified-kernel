@@ -452,6 +452,15 @@ config MSM_QUIN_SUBSYSTEM_NOTIF_VIRT
 	  a subsystem to notify its clients of its state, when the clients
 	  are in a different virtual machine domain than the subsystem.
 
+config QCOM_DS_SKIP_Q6_STOP
+	bool "Skip stopping Q6 during Deepsleep"
+	help
+	  This option skips sending the stop notification to Q6 as part
+	  of Deepsleep flow, based on the assumption that the Q6 is
+	  already in Low-power state.
+
+	  If not sure, say N.
+
 endif # REMOTEPROC
 
 endmenu

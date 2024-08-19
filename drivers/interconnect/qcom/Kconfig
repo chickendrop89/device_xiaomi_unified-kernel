@@ -162,6 +162,19 @@ config INTERCONNECT_QCOM_SDM660
 	  This is a driver for the Qualcomm Network-on-Chip on sdm660-based
 	  platforms.
 
+config INTERCONNECT_QCOM_SDM670
+	tristate "SDM670 interconnect driver"
+	depends on INTERCONNECT_QCOM
+	depends on QCOM_RPMH && QCOM_COMMAND_DB && OF
+	select INTERCONNECT_QCOM_BCM_VOTER
+	select INTERCONNECT_QCOM_RPMH
+	select INTERCONNECT_QCOM_QOS
+	help
+	  This is a driver for the Qualcomm Technologies, Inc. Network-on-Chip
+	  on sdm670-based platforms. The interconnect provider collects and
+	  aggregates the consumer bandwidth requests to satisfy constraints
+	  placed on Network-on-Chip performance states.
+
 config INTERCONNECT_QCOM_SDM845
 	tristate "Qualcomm SDM845 interconnect driver"
 	depends on INTERCONNECT_QCOM_RPMH_POSSIBLE

@@ -16,7 +16,7 @@
 #include <linux/pci.h>
 #include <linux/iova.h>
 #include <linux/io-pgtable.h>
-#include <linux/rwlock.h>
+#include <linux/spinlock.h>
 #include <linux/qcom-iommu-util.h>
 #include <trace/hooks/iommu.h>
 #include "qcom-dma-iommu-generic.h"

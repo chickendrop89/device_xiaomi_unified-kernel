@@ -16,6 +16,9 @@ qcom_logbuf_vh.ko
 qcom_cpu_vendor_hooks.ko
 clk-smd-rpm.ko
 gcc-khaje.ko
+gcc-scuba.ko
+gcc-sm6115.ko
+qnoc-scuba.ko
 qcom-cpufreq-hw.ko
 qcom_ipcc.ko
 qcom_ipc_logging.ko
@@ -42,12 +45,14 @@ mem_buf.ko
 msm_dma_iommu_mapping.ko
 pinctrl-khaje.ko
 pinctrl-bengal.ko
+pinctrl-scuba.ko
 qnoc-bengal.ko
 ns.ko
 nvmem_qfprom.ko
 nvmem_qcom-spmi-sdam.ko
 phy-qcom-ufs.ko
 phy-qcom-ufs-qmp-v4-khaje.ko
+phy-qcom-ufs-qmp-v3-660.ko
 phy-qcom-ufs-qrbtc-sdm845.ko
 pinctrl-msm.ko
 proxy-consumer.ko

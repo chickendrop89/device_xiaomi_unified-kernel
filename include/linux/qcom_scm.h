@@ -13,6 +13,12 @@
 #define QCOM_SCM_CPU_PWR_DOWN_L2_ON	0x0
 #define QCOM_SCM_CPU_PWR_DOWN_L2_OFF	0x1
 #define QCOM_SCM_HDCP_MAX_REQ_CNT	5
+#define QCOM_SCM_CAMERA_MAX_QOS_CNT	2
+
+struct qcom_scm_camera_qos {
+	u32 offset;
+	u32 val;
+};
 
 enum qcom_download_mode {
 	QCOM_DOWNLOAD_NODUMP    = 0x00,
@@ -281,6 +287,8 @@ extern int qcom_scm_camera_protect_all(uint32_t protect, uint32_t param);
 extern int qcom_scm_camera_protect_phy_lanes(bool protect, u64 regmask);
 extern int qcom_scm_camera_send_topology(uint32_t phy_sel, uint32_t topology);
 extern int qcom_scm_camera_reset_pipeLine(uint32_t phy_sel, uint32_t stream);
+extern int qcom_scm_camera_update_camnoc_qos(uint32_t use_case_id,
+		uint32_t qos_cnt, struct qcom_scm_camera_qos *scm_buf);
 
 extern int qcom_scm_tsens_reinit(int *tsens_ret);
 

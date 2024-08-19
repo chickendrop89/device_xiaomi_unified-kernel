@@ -66,3 +66,12 @@ sdhci-msm.ko
 qpnp-power-on.ko
 msm-poweroff.ko
 mem-hooks.ko
+ufs_qcom.ko
+phy-qcom-ufs.ko
+phy-qcom-ufs-qmp-v3-660.ko
+ufshcd-crypto-qti.ko
+cqhci-crypto-qti.ko
+crypto-qti-common.ko
+crypto-qti-tz.ko
+nvmem_qfprom.ko
+sdhci-msm-scaling.ko

@@ -26,6 +26,7 @@
 #include <dt-bindings/mfd/qcom-rpm.h>
 
 #include "clk-debug.h"
+#include "common.h"
 
 #define QCOM_RPM_KEY_SOFTWARE_ENABLE			0x6e657773
 #define QCOM_RPM_KEY_PIN_CTRL_CLK_BUFFER_ENABLE_KEY	0x62636370
@@ -1595,6 +1596,11 @@ static int rpm_smd_clk_probe(struct platform_device *pdev)
 			dev_err(&pdev->dev, "Failed to register %s\n", name);
 			return ret;
 		}
+
+		ret = clk_hw_debug_register(&pdev->dev, hw_clks[i]);
+		if (ret)
+			dev_warn(&pdev->dev, "Failed to add %s to debug list\n",
+									name);
 	}
 
 	ret = devm_of_clk_add_hw_provider(&pdev->dev, qcom_smdrpm_clk_hw_get,

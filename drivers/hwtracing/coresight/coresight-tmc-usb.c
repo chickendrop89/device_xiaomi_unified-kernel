@@ -775,10 +775,12 @@ int tmc_etr_usb_init(struct amba_device *adev,
 				mapping_config = qcom_iommu_get_mappings_configuration(domain);
 				if (mapping_config < 0)
 					return -ENOMEM;
-				if (!(mapping_config & QCOM_IOMMU_MAPPING_CONF_S1_BYPASS))
+				if (!(mapping_config & QCOM_IOMMU_MAPPING_CONF_S1_BYPASS)) {
 					pr_debug("%s: setting SPS_BAM_SMMU_EN flag with (%s)\n",
 							__func__, dev_name(dev));
-				bamdata->props.options |= SPS_BAM_SMMU_EN;
+
+					bamdata->props.options |= SPS_BAM_SMMU_EN;
+				}
 			}
 
 			return sps_register_bam_device(&bamdata->props, &bamdata->handle);

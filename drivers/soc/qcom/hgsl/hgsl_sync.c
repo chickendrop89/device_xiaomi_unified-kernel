@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/types.h>
@@ -217,7 +217,7 @@ static void hgsl_hsync_fence_release(struct dma_fence *base)
 		spin_unlock(&timeline->lock);
 		hgsl_hsync_timeline_put(timeline);
 	}
-	kfree(fence);
+	dma_fence_free(base);
 }
 
 static void hgsl_hsync_fence_value_str(struct dma_fence *base,
@@ -325,14 +325,16 @@ int hgsl_isync_timeline_create(struct hgsl_priv *priv,
 	idr_preload(GFP_KERNEL);
 	spin_lock(&hgsl->isync_timeline_lock);
 	idr = idr_alloc(&hgsl->isync_timeline_idr, timeline, 1, 0, GFP_NOWAIT);
-	spin_unlock(&hgsl->isync_timeline_lock);
-	idr_preload_end();
-
 	if (idr > 0) {
 		timeline->id = idr;
 		*timeline_id = idr;
 		ret = 0;
-	} else
+	}
+	spin_unlock(&hgsl->isync_timeline_lock);
+	idr_preload_end();
+
+	/* allocate IDR failed */
+	if (ret != 0)
 		kfree(timeline);
 
 	return ret;
@@ -374,16 +376,15 @@ int hgsl_isync_fence_create(struct hgsl_priv *priv, uint32_t timeline_id,
 						ts);
 
 	sync_file = sync_file_create(&fence->fence);
-	dma_fence_put(&fence->fence);
 	if (sync_file == NULL) {
 		ret = -ENOMEM;
-		goto out;
+		goto out_fence;
 	}
 
 	*fence_fd = get_unused_fd_flags(0);
 	if (*fence_fd < 0) {
 		ret = -EBADF;
-		goto out;
+		goto out_fence;
 	}
 
 	fd_install(*fence_fd, sync_file->file);
@@ -393,6 +394,8 @@ int hgsl_isync_fence_create(struct hgsl_priv *priv, uint32_t timeline_id,
 	list_add_tail(&fence->child_list, &timeline->fence_list);
 	spin_unlock_irqrestore(&timeline->lock, flags);
 
+out_fence:
+	dma_fence_put(&fence->fence);
 out:
 	if (ret) {
 		if (sync_file)
@@ -418,9 +421,10 @@ static int hgsl_isync_timeline_destruct(struct hgsl_priv *priv,
 	spin_lock_irqsave(&timeline->lock, flags);
 	list_for_each_entry_safe(cur, next, &timeline->fence_list,
 				 child_list) {
-		dma_fence_get(&cur->fence);
-		list_del_init(&cur->child_list);
-		list_add(&cur->free_list, &flist);
+		if (dma_fence_get_rcu(&cur->fence)) {
+			list_del_init(&cur->child_list);
+			list_add(&cur->free_list, &flist);
+		}
 	}
 	spin_unlock_irqrestore(&timeline->lock, flags);
 
@@ -790,7 +794,7 @@ static void hgsl_isync_fence_release(struct dma_fence *base)
 		hgsl_isync_timeline_put(fence->timeline);
 	}
 
-	dma_fence_free(&fence->fence);
+	dma_fence_free(base);
 }
 
 static void hgsl_isync_fence_value_str(struct dma_fence *base,

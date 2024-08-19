@@ -461,13 +461,6 @@ config SC_VIDEOCC_7280
 	  Say Y if you want to support video devices and functionality such as
 	  video encode and decode.
 
-config SDM_CAMCC_845
-	tristate "SDM845 Camera Clock Controller"
-	select SDM_GCC_845
-	help
-	  Support for the camera clock controller on SDM845 devices.
-	  Say Y if you want to support camera devices and camera functionality.
-
 config SDM_GCC_660
 	tristate "SDM660 Global Clock Controller"
 	select QCOM_GDSC
@@ -508,9 +501,18 @@ config QCS_Q6SSTOP_404
 	  Say Y if you want to use the Q6SSTOP branch clocks of the WCSS clock
 	  controller to reset the Q6SSTOP subsystem.
 
+config SDM_CAMCC_845
+	tristate "SDM845 Camera Clock Controller"
+	select SDM_GCC_845
+	help
+	  Support for the camera clock controller on Qualcomm Technologies, Inc
+	  SDM845 devices.
+	  Say Y if you want to support camera devices and functionality such as
+	  capturing pictures.
+
 config SDM_GCC_845
 	tristate "SDM845 Global Clock Controller"
-	select QCOM_GDSC
+	depends on COMMON_CLK_QCOM
 	help
 	  Support for the global clock controller on SDM845 devices.
 	  Say Y if you want to use peripheral devices such as UART, SPI,
@@ -549,6 +551,15 @@ config SDM_LPASSCC_845
 	  Support for the LPASS clock controller on SDM845 devices.
 	  Say Y if you want to use the LPASS branch clocks of the LPASS clock
 	  controller to reset the LPASS subsystem.
+
+config SDM_DEBUGCC_845
+	tristate "SDM845 Debug Clock Controller"
+	depends on COMMON_CLK_QCOM
+	help
+	  Support for the debug clock controller on Qualcomm Technologies, Inc
+	  SDM845 devices.
+	  Say Y if you want to support the debug clocks such as
+	  clock measurement functionality.
 
 config SDX_GCC_55
 	tristate "SDX55 Global Clock Controller"
@@ -595,6 +606,33 @@ config SM_GCC_6115
 	  Support for the global clock controller on SM6115 and SM4250 devices.
 	  Say Y if you want to use peripheral devices such as UART, SPI,
 	  i2C, USB, UFS, SDDC, PCIe, etc.
+
+config SM_DISPCC_6115
+	tristate "SM6115 Display Clock Controller"
+	select SM_GCC_6115
+	help
+	Support for the display clock controller on Qualcomm Technologies, Inc.
+	  SM6115 devices.
+	  Say Y if you want to support display devices and functionality such as
+	  splash screen.
+
+config SM_GPUCC_6115
+	tristate "SM6115 Graphics Clock Controller"
+	select SM_GCC_6115
+	help
+	  Support for the graphics clock controller on Qualcomm Technologies, Inc
+	  SM6115 devices.
+	  Say Y if you want to support graphics controller devices and
+	  functionality such as 3D graphics.
+
+config SM_DEBUGCC_6115
+	tristate "SM6115 Debug Clock Controller"
+	depends on COMMON_CLK_QCOM
+	help
+	  Support for the debug clock controller on Qualcomm Technologies, Inc
+	  SM6115 devices.
+	  Say Y if you want to support the debug clocks such as
+	  clock measurement functionality.
 
 config SM_GCC_6125
 	tristate "SM6125 Global Clock Controller"

@@ -6,7 +6,7 @@
 config NET_VENDOR_TOSHIBA
 	bool "Toshiba devices"
 	default y
-	depends on PCI && (PPC_IBM_CELL_BLADE || MIPS) || PPC_PS3
+	depends on PCI && (PPC_IBM_CELL_BLADE || MIPS) || PPC_PS3 || PCI_MSM
 	help
 	  If you have a network (Ethernet) card belonging to this class, say Y.
 
@@ -52,5 +52,14 @@ config TC35815
 	tristate "TOSHIBA TC35815 Ethernet support"
 	depends on PCI && MIPS
 	select PHYLIB
+
+config TC956X_PCIE_ETH
+	tristate "TOSHIBA TC956X Ethernet support"
+	depends on PCI_MSM
+	help
+	  This driver provides network connectivity for Ethernet. Mainly it implements
+	  MAC layer for some PHY devices, like RTL8211F, QCA8081.
+	  When you have the connectivity requirement with QPS615, you can enable it
+	  for serving Ethernet connectivity.
 
 endif # NET_VENDOR_TOSHIBA

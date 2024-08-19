@@ -19,12 +19,11 @@
 #define PID_SIZE		10
 #define FASTRPC_MSG_MAX	256
 
-#define SESSION_ID_INDEX (30)
-
 struct vfastrpc_channel_ctx {
 	int secure;
 	bool unsigned_support;
 	struct fastrpc_dsp_capabilities dsp_cap_kernel;
+	uint64_t sesscount;
 };
 
 struct virt_fastrpc_vq {
@@ -64,6 +63,8 @@ struct vfastrpc_apps {
 	const struct file_operations *debugfs_fops;
 	spinlock_t msglock;
 	struct virt_fastrpc_msg *msgtable[FASTRPC_MSG_MAX];
+	uint32_t max_sess_per_proc;
+	spinlock_t hlock;
 };
 
 #endif /*__VIRTIO_FASTRPC_BASE_H__*/

@@ -28,6 +28,10 @@ if [ "${KERNEL_CMDLINE_CONSOLE_AUTO}" != "0" ]; then
 	KERNEL_VENDOR_CMDLINE+=' console=ttyAMA0 earlycon=pl011,0x1c090000 androidboot.first_stage_console=1 androidboot.bootdevice=1c170000.virtio_blk '
 fi
 
+if [ "${VARIANT}" = "consolidate" ]; then
+	KASAN=sw_tags
+fi
+
 KERNEL_VENDOR_CMDLINE+=' bootconfig '
 
 ################################################################################

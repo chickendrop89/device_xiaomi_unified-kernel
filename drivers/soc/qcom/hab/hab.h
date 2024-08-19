@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 #ifndef __HAB_H
 #define __HAB_H
@@ -415,8 +415,8 @@ struct virtual_channel {
 	int closed;
 	int forked; /* if fork is detected and assume only once */
 	/* stats */
-	uint64_t tx_cnt; /* total succeeded tx */
-	uint64_t rx_cnt; /* total succeeded rx */
+	atomic64_t tx_cnt; /* total succeeded tx */
+	atomic64_t rx_cnt; /* total succeeded rx */
 	int rx_inflight; /* rx in progress/blocking */
 };
 
@@ -486,6 +486,12 @@ enum exp_desc_state {
 	EXP_DESC_IMPORTING,	/* hab_mem_import is in progress */
 	EXP_DESC_IMPORTED,	/* hab_mem_import is called and returns success */
 };
+
+enum export_state {
+	HAB_EXP_EXPORTING,
+	HAB_EXP_SUCCESS,
+};
+
 struct export_desc_super {
 	struct kref refcount;
 	void *platform_data;
@@ -493,6 +499,7 @@ struct export_desc_super {
 	unsigned int payload_size; /* size of the compressed pfn structure */
 
 	enum exp_desc_state import_state;
+	enum export_state exp_state;
 	uint32_t remote_imported;
 
 	/*
@@ -598,7 +605,8 @@ int hab_open_listen(struct uhab_context *ctx,
 		struct hab_device *dev,
 		struct hab_open_request *listen,
 		struct hab_open_request **recv_request,
-		int ms_timeout);
+		int ms_timeout,
+		uint32_t flags);
 
 struct virtual_channel *hab_vchan_alloc(struct uhab_context *ctx,
 		struct physical_channel *pchan, int openid);
@@ -620,6 +628,9 @@ void hab_pchan_put(struct physical_channel *pchan);
 struct uhab_context *hab_ctx_alloc(int kernel);
 
 void hab_ctx_free(struct kref *ref);
+
+void hab_ctx_free_fn(struct uhab_context *ctx);
+void hab_ctx_free_os(struct kref *ref);
 
 static inline void hab_ctx_get(struct uhab_context *ctx)
 {
@@ -654,7 +665,8 @@ int physical_channel_read(struct physical_channel *pchan,
 
 int physical_channel_send(struct physical_channel *pchan,
 		struct hab_header *header,
-		void *payload);
+		void *payload,
+		unsigned int flags);
 
 void physical_channel_rx_dispatch(unsigned long physical_channel);
 void physical_channel_rx_dispatch_common(unsigned long physical_channel);

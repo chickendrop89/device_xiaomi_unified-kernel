@@ -266,6 +266,16 @@ source "drivers/soc/qcom/hgsl/Kconfig"
 source "drivers/soc/qcom/hab/Kconfig"
 source "drivers/soc/qcom/memshare/Kconfig"
 
+config QCOM_SAIL_MAILBOX
+	tristate "Qualcomm Technologies, Inc. sail mailbox driver"
+	depends on MAILBOX
+	default n
+	help
+	  Qualcomm Technologies, Inc. safety island (SAIL) mailbox driver.
+	  The SAIL mailbox driver facilitates communication
+	  between APSS and Safety Island.
+	  If unsure, say 'N'.
+
 config QCOM_QFPROM_SYS
 	tristate "Qualcomm Technologies, Inc. QFPROM_SYS driver "
 	depends on QCOM_QFPROM
@@ -649,6 +659,16 @@ config QCOM_SOC_SLEEP_STATS
 	  various SoC level low power modes statistics and export to debugfs
 	  interface.
 
+config QCOM_SUBSYS_STATUS
+	tristate "Qualcomm Technologies, Inc. (QTI) Subsystem status driver"
+	depends on ARCH_QCOM || COMPILE_TEST
+	help
+	  Qualcomm Technologies, Inc. (QTI) subsystem status driver to read
+	  subsystem status during s2idle and deep sleep and if any sub system
+	  is not in sleep state then reject the curent s2idle or deep sleep
+	  PM sequence. Enable this driver to check subsystem sleep state
+	  during PM suspend cycle.
+
 config QTI_RPM_STATS_LOG
 	tristate "Qualcomm Technologies, Inc. (QTI) RPM Stats Driver"
 	help
@@ -656,6 +676,7 @@ config QTI_RPM_STATS_LOG
 	  memory location. These messages provide statistical information about
 	  the low power modes that subsystem enters. The drivers outputs the
 	  message via a debugfs node.
+
 
 config QCOM_ADSP_SLEEPMON
 	tristate "ADSP sleep monitor"
@@ -1261,6 +1282,15 @@ config QCOM_MINIDUMP_MMIO
 	  This enables MMIO minidump transport layer.
 	  If the target emulates minidump smem as shadow registers, say yes to
 	  enable minidump feature.
+	  If unsure, say no.
+
+config QCOM_MINIDUMP_VIRTIO
+	tristate "QCOM Minidump based on VIRTIO Support"
+	depends on QCOM_MINIDUMP && VIRTIO
+	help
+	  This enables VirtIO minidump transport layer.
+	  If minidump and VirtIO are enabled,
+	  say yes to enable minidump feature.
 	  If unsure, say no.
 
 config QCOM_VA_MINIDUMP

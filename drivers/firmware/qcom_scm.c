@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* Copyright (c) 2010,2015,2019,2021 The Linux Foundation. All rights reserved.
  * Copyright (C) 2015 Linaro Ltd.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 #define pr_fmt(fmt)     "qcom-scm: %s: " fmt, __func__
 
@@ -60,7 +60,6 @@ struct qcom_scm {
 	struct qcom_scm_waitq waitq;
 
 	u64 dload_mode_addr;
-	bool legacy_dload_method;
 };
 
 enum qcom_scm_custom_reset_type qcom_scm_custom_reset_type;
@@ -535,10 +534,12 @@ void qcom_scm_set_download_mode(enum qcom_download_mode mode, phys_addr_t tcsr_b
 	int ret = 0;
 	struct device *dev = __scm ? __scm->dev : NULL;
 
-	if (__scm && __scm->legacy_dload_method) {
-		ret = __qcom_scm_set_dload_mode(dev, mode);
-	} else if (tcsr_boot_misc || (__scm && __scm->dload_mode_addr)) {
+	if (tcsr_boot_misc || (__scm && __scm->dload_mode_addr)) {
 		ret = qcom_scm_io_writel(tcsr_boot_misc ? : __scm->dload_mode_addr, mode);
+	} else if (__qcom_scm_is_call_available(dev,
+				QCOM_SCM_SVC_BOOT,
+				QCOM_SCM_BOOT_SET_DLOAD_MODE)) {
+		ret = __qcom_scm_set_dload_mode(dev, mode);
 	} else {
 		dev_err(dev,
 			"No available mechanism for setting download mode\n");
@@ -2484,6 +2485,64 @@ int qcom_scm_camera_reset_pipeLine(uint32_t phy_sel, uint32_t stream)
 }
 EXPORT_SYMBOL(qcom_scm_camera_reset_pipeLine);
 
+int qcom_scm_camera_update_camnoc_qos(uint32_t use_case_id,
+	uint32_t cam_qos_cnt, struct qcom_scm_camera_qos *cam_qos)
+{
+	int ret;
+	dma_addr_t payload_phys;
+	u32 *payload_buf = NULL;
+	u32 payload_size = 0;
+
+	struct qcom_scm_desc desc = {
+		.svc = QCOM_SCM_SVC_CAMERA,
+		.cmd = QCOM_SCM_CAMERA_UPDATE_CAMNOC_QOS,
+		.owner = ARM_SMCCC_OWNER_SIP,
+		.args[0] = use_case_id,
+		.args[2] = payload_size,
+		.arginfo = QCOM_SCM_ARGS(3, QCOM_SCM_VAL, QCOM_SCM_RW, QCOM_SCM_VAL),
+	};
+
+	if ((cam_qos_cnt > QCOM_SCM_CAMERA_MAX_QOS_CNT) || (cam_qos_cnt && !cam_qos)) {
+		pr_err("Invalid input SmartQoS count: %d\n", cam_qos_cnt);
+		return -EINVAL;
+	}
+
+	payload_size = cam_qos_cnt * sizeof(struct qcom_scm_camera_qos);
+
+	/* fill all required qos settings */
+	if (use_case_id && payload_size && cam_qos) {
+		payload_buf = dma_alloc_coherent(__scm->dev,
+						 payload_size, &payload_phys, GFP_KERNEL);
+		if (!payload_buf)
+			return -ENOMEM;
+
+		memcpy(payload_buf, cam_qos, payload_size);
+		desc.args[1] = payload_phys;
+		desc.args[2] = payload_size;
+	} else if (use_case_id == 0) { /* CAM_QOS_UPDATE_TYPE_STATIC */
+		/*
+		 * Allocating 1 byte of memory as TZ is expecting non zero payload size
+		 * and address
+		 */
+		payload_size = 8;
+		payload_buf = dma_alloc_coherent(__scm->dev,
+						 payload_size, &payload_phys, GFP_KERNEL);
+		if (!payload_buf)
+			return -ENOMEM;
+
+		desc.args[1] = payload_phys;
+		desc.args[2] = payload_size;
+	}
+
+	ret = qcom_scm_call(__scm->dev, &desc, NULL);
+
+	if (payload_buf)
+		dma_free_coherent(__scm->dev, payload_size, payload_buf, payload_phys);
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(qcom_scm_camera_update_camnoc_qos);
+
 int qcom_scm_tsens_reinit(int *tsens_ret)
 {
 	unsigned int ret;
@@ -3052,13 +3111,6 @@ int  scm_mem_protection_init_do(void)
 	return resp;
 }
 
-static bool is_dload_enabled(void)
-{
-	return ((IS_ENABLED(CONFIG_POWER_RESET_QCOM_DOWNLOAD_MODE) ||
-	    IS_ENABLED(CONFIG_POWER_RESET_MSM) ||
-	    download_mode));
-}
-
 static int qcom_scm_probe(struct platform_device *pdev)
 {
 	struct qcom_scm *scm;
@@ -3069,21 +3121,9 @@ static int qcom_scm_probe(struct platform_device *pdev)
 	if (!scm)
 		return -ENOMEM;
 
-	/*
-	 * For some target checking _qcom_scm_is_call_available on
-	 * QCOM_SCM_BOOT_SET_DLOAD_MODE just hangs, so, to be on safer
-	 * side, check only if the configs are enabled.
-	 */
-	if (is_dload_enabled()) {
-		ret = qcom_scm_find_dload_address(&pdev->dev, &scm->dload_mode_addr);
-		if (ret < 0)
-			return ret;
-
-		if (!scm->dload_mode_addr) {
-			scm->legacy_dload_method = __qcom_scm_is_call_available(&pdev->dev,
-					QCOM_SCM_SVC_BOOT, QCOM_SCM_BOOT_SET_DLOAD_MODE);
-		}
-	}
+	ret = qcom_scm_find_dload_address(&pdev->dev, &scm->dload_mode_addr);
+	if (ret < 0)
+		return ret;
 
 	clks = (unsigned long)of_device_get_match_data(&pdev->dev);
 

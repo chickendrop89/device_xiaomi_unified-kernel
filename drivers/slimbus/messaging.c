@@ -70,6 +70,8 @@ int slim_alloc_txn_tid(struct slim_controller *ctrl, struct slim_msg_txn *txn)
 	ret = idr_alloc_cyclic(&ctrl->tid_idr, txn, 1,
 				SLIM_MAX_TIDS, GFP_ATOMIC);
 	if (ret < 0) {
+		dev_err(ctrl->dev, "%s: idr_alloc_cyclic ret %d\n",
+			__func__, ret);
 		spin_unlock_irqrestore(&ctrl->txn_lock, flags);
 		return ret;
 	}
@@ -131,8 +133,11 @@ int slim_do_transfer(struct slim_controller *ctrl, struct slim_msg_txn *txn)
 
 	if (need_tid) {
 		ret = slim_alloc_txn_tid(ctrl, txn);
-		if (ret)
+		if (ret) {
+			dev_err(ctrl->dev, "%s: slim_alloc_txn_tid ret %d\n",
+				__func__, ret);
 			return ret;
+		}
 
 		if (!txn->msg->comp) {
 			comp = txn->comp;
@@ -143,8 +148,8 @@ int slim_do_transfer(struct slim_controller *ctrl, struct slim_msg_txn *txn)
 	if (!clk_pause_msg) {
 		ret = pm_runtime_get_sync(ctrl->dev);
 		if (ret < 0) {
-			dev_err(ctrl->dev, "runtime resume failed ret:%d\n",
-				ret);
+			dev_err(ctrl->dev, "%s: pm_runtime_get_sync failed: %d\n",
+				__func__, ret);
 			slim_free_txn_tid(ctrl, txn);
 			pm_runtime_put_noidle(ctrl->dev);
 			/* Set device in suspended since resume failed */
@@ -155,8 +160,8 @@ int slim_do_transfer(struct slim_controller *ctrl, struct slim_msg_txn *txn)
 		}
 
 		if (ctrl->sched.clk_state != SLIM_CLK_ACTIVE) {
-			dev_err(ctrl->dev, "ctrl wrong state:%d, ret:%d\n",
-				ctrl->sched.clk_state, ret);
+			dev_err(ctrl->dev, "%s: ctrl wrong state:%d, ret:%d\n",
+				__func__, ctrl->sched.clk_state, ret);
 			if (need_tid && !txn->msg->comp)
 				txn->comp = comp;
 			goto slim_xfer_err;
@@ -165,6 +170,9 @@ int slim_do_transfer(struct slim_controller *ctrl, struct slim_msg_txn *txn)
 
 	ret = ctrl->xfer_msg(ctrl, txn);
 
+	if (ret == -ETIMEDOUT)
+		slim_free_txn_tid(ctrl, txn);
+
 	if (!ret && need_tid && !txn->msg->comp) {
 		unsigned long ms = txn->rl + HZ;
 
@@ -172,6 +180,7 @@ int slim_do_transfer(struct slim_controller *ctrl, struct slim_msg_txn *txn)
 						      msecs_to_jiffies(ms));
 		if (!timeout) {
 			ret = -ETIMEDOUT;
+			dev_err(ctrl->dev, "%s: Timed out %d\n", __func__, ret);
 			txn->comp = NULL;
 			slim_free_txn_tid(ctrl, txn);
 		}

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #define pr_fmt(fmt) "clk: %s: " fmt, __func__
@@ -23,6 +23,42 @@ static struct measure_clk_data debug_mux_priv = {
 	.ctl_reg = 0x62038,
 	.status_reg = 0x6203C,
 	.xo_div4_cbcr = 0x28008,
+};
+
+static const char *const cpu_cc_debug_mux_parent_names[] = {
+	"pwrcl_clk",
+	"perfcl_clk",
+};
+
+static int apss_cc_debug_mux_pre_divs[] = {
+	0x8,		/* pwrcl_clk */
+	0x8,		/* perfcl_clk */
+};
+
+static int cpu_cc_debug_mux_sels[] = {
+	0x0,		/* pwrcl_clk */
+	0x1,		/* perfcl_clk */
+};
+
+static struct clk_debug_mux cpu_cc_debug_mux = {
+	.priv = &debug_mux_priv,
+	.debug_offset = 0x0,
+	.post_div_offset = 0x0,
+	.cbcr_offset = U32_MAX,
+	.src_sel_mask = 0x3FF,
+	.src_sel_shift = 8,
+	.post_div_mask = 0xF,
+	.post_div_shift = 28,
+	.post_div_val = 1,
+	.pre_div_vals = apss_cc_debug_mux_pre_divs,
+	.mux_sels = cpu_cc_debug_mux_sels,
+	.num_mux_sels = ARRAY_SIZE(cpu_cc_debug_mux_sels),
+	.hw.init = &(const struct clk_init_data){
+		.name = "cpu_cc_debug_mux",
+		.ops = &clk_debug_mux_ops,
+		.parent_names = cpu_cc_debug_mux_parent_names,
+		.num_parents = ARRAY_SIZE(cpu_cc_debug_mux_parent_names),
+	},
 };
 
 static const char *const disp_cc_debug_mux_parent_names[] = {
@@ -235,6 +271,7 @@ static const char *const gcc_debug_mux_parent_names[] = {
 	"measure_only_ipa_2x_clk",
 	"measure_only_snoc_clk",
 	"video_cc_debug_mux",
+	"cpu_cc_debug_mux",
 };
 
 static int gcc_debug_mux_sels[] = {
@@ -389,6 +426,7 @@ static int gcc_debug_mux_sels[] = {
 	0xC2,		/* measure_only_ipa_2x_clk */
 	0x7,		/* measure_only_snoc_clk */
 	0x42,		/* video_cc_debug_mux */
+	0xAB,		/* cpu_cc_debug_mux */
 };
 
 static struct clk_debug_mux gcc_debug_mux = {
@@ -508,7 +546,7 @@ static const char *const mc_cc_debug_mux_parent_names[] = {
 };
 
 static struct clk_debug_mux mc_cc_debug_mux = {
-	.period_offset = 0x50,
+	.period_offset = 0x20,
 	.hw.init = &(struct clk_init_data){
 		.name = "mc_cc_debug_mux",
 		.ops = &clk_debug_mux_ops,
@@ -520,9 +558,26 @@ static struct clk_debug_mux mc_cc_debug_mux = {
 static struct mux_regmap_names mux_list[] = {
 	{ .mux = &mc_cc_debug_mux, .regmap_name = "qcom,mccc" },
 	{ .mux = &video_cc_debug_mux, .regmap_name = "qcom,videocc" },
+	{ .mux = &cpu_cc_debug_mux, .regmap_name = "qcom,cpucc" },
 	{ .mux = &gpu_cc_debug_mux, .regmap_name = "qcom,gpucc" },
 	{ .mux = &disp_cc_debug_mux, .regmap_name = "qcom,dispcc" },
 	{ .mux = &gcc_debug_mux, .regmap_name = "qcom,gcc" },
+};
+
+static struct clk_dummy perfcl_clk = {
+	.rrate = 1000,
+	.hw.init = &(struct clk_init_data){
+		.name = "perfcl_clk",
+		.ops = &clk_dummy_ops,
+	},
+};
+
+static struct clk_dummy pwrcl_clk = {
+	.rrate = 1000,
+	.hw.init = &(struct clk_init_data){
+		.name = "pwrcl_clk",
+		.ops = &clk_dummy_ops,
+	},
 };
 
 static struct clk_dummy measure_only_mccc_clk = {
@@ -562,6 +617,8 @@ static struct clk_hw *debugcc_trinket_hws[] = {
 	&measure_only_ipa_2x_clk.hw,
 	&measure_only_mccc_clk.hw,
 	&measure_only_snoc_clk.hw,
+	&perfcl_clk.hw,
+	&pwrcl_clk.hw,
 };
 
 static const struct of_device_id clk_debug_match_table[] = {
@@ -581,6 +638,8 @@ static int clk_debug_trinket_probe(struct platform_device *pdev)
 		ARRAY_SIZE(gpu_cc_debug_mux_sels));
 	BUILD_BUG_ON(ARRAY_SIZE(video_cc_debug_mux_parent_names) !=
 		ARRAY_SIZE(video_cc_debug_mux_sels));
+	BUILD_BUG_ON(ARRAY_SIZE(cpu_cc_debug_mux_parent_names) !=
+		ARRAY_SIZE(cpu_cc_debug_mux_sels));
 
 	clk = devm_clk_get(&pdev->dev, "xo_clk_src");
 	if (IS_ERR(clk)) {

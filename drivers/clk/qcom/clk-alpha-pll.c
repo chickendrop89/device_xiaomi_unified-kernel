@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (c) 2015, 2018-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/kernel.h>
@@ -2109,6 +2109,16 @@ const struct clk_ops clk_alpha_pll_postdiv_fabia_ops = {
 };
 EXPORT_SYMBOL_GPL(clk_alpha_pll_postdiv_fabia_ops);
 
+static void clk_alpha_pll_custom_configure(struct clk_alpha_pll *pll,
+		struct regmap *regmap, const struct alpha_pll_config *config)
+{
+	int i;
+
+	for (i = 0; i < config->num_custom_reg; i++)
+		regmap_write(regmap, pll->offset + config->custom_reg_offset[i],
+				config->custom_reg_val[i]);
+}
+
 /**
  * clk_trion_pll_configure - configure the trion pll
  *
@@ -2154,6 +2164,8 @@ void clk_trion_pll_configure(struct clk_alpha_pll *pll, struct regmap *regmap,
 					config->test_ctl_hi_val);
 	clk_alpha_pll_write_config(regmap, PLL_TEST_CTL_U1(pll),
 					config->test_ctl_hi1_val);
+
+	clk_alpha_pll_custom_configure(pll, regmap, config);
 
 	regmap_update_bits(regmap, PLL_MODE(pll), PLL_UPDATE_BYPASS,
 			   PLL_UPDATE_BYPASS);
@@ -2219,6 +2231,20 @@ static int alpha_pll_lucid_prepare(struct clk_hw *hw)
 	regmap_read(pll->clkr.regmap, PLL_MODE(pll), &val);
 	if (val & LUCID_PCAL_DONE)
 		return 0;
+
+	if (pll->config) {
+		/*
+		 * Reconfigure the PLL if CAL_L_VAL is 0 (which implies that all
+		 * clock controller registers have been reset).
+		 */
+		regmap_read(pll->clkr.regmap, PLL_CAL_L_VAL(pll), &val);
+		if (!val) {
+			pr_debug("reconfiguring %s after it was reset\n",
+				clk_hw_get_name(hw));
+			clk_lucid_pll_configure(pll, pll->clkr.regmap,
+						pll->config);
+		}
+	}
 
 	/* On/off to calibrate */
 	ret = clk_trion_pll_enable(hw);

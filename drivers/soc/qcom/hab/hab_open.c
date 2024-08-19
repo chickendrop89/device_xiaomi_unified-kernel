@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2016-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 #include "hab.h"
 
@@ -25,11 +25,18 @@ void hab_open_request_init(struct hab_open_request *request,
 int hab_open_request_send(struct hab_open_request *request)
 {
 	struct hab_header header = HAB_HEADER_INITIALIZER;
+	int ret = 0;
 
 	HAB_HEADER_SET_SIZE(header, sizeof(struct hab_open_send_data));
 	HAB_HEADER_SET_TYPE(header, request->type);
 
-	return physical_channel_send(request->pchan, &header, &request->xdata);
+	ret = physical_channel_send(request->pchan, &header, &request->xdata,
+			HABMM_SOCKET_SEND_FLAGS_NON_BLOCKING);
+	if (ret != 0)
+		pr_err("pchan %s failed to send open req msg %d\n",
+			request->pchan->name, ret);
+
+	return ret;
 }
 
 /*
@@ -137,15 +144,24 @@ int hab_open_listen(struct uhab_context *ctx,
 		struct hab_device *dev,
 		struct hab_open_request *listen,
 		struct hab_open_request **recv_request,
-		int ms_timeout)
+		int ms_timeout,
+		unsigned int flags)
 {
 	int ret = 0;
+
+	unsigned int uninterruptible = 0;
 
 	if (!ctx || !listen || !recv_request) {
 		pr_err("listen failed ctx %pK listen %pK request %pK\n",
 			ctx, listen, recv_request);
 		return -EINVAL;
 	}
+
+	/* This flag is for HAB clients in kernel space only, to avoid calling any
+	 * unexpected uninterruptible habmm_socket_open() since it is not killable.
+	 */
+	if (ctx->kernel)
+		uninterruptible = (flags & HABMM_SOCKET_OPEN_FLAGS_UNINTERRUPTIBLE);
 
 	*recv_request = NULL;
 	if (ms_timeout > 0) { /* be case */
@@ -157,20 +173,28 @@ int hab_open_listen(struct uhab_context *ctx,
 			pr_debug("%s timeout in open listen\n", dev->name);
 			ret = -EAGAIN; /* condition not met */
 		} else if (-ERESTARTSYS == ret) {
-			pr_warn("something failed in open listen ret %d\n",
-					ret);
+			pr_warn("something failed in open listen ret %d\n", ret);
 			ret = -EINTR; /* condition not met */
 		} else if (ret > 0)
 			ret = 0; /* condition met */
 	} else { /* fe case */
-		ret = wait_event_interruptible(dev->openq,
-			hab_open_request_find(ctx, dev, listen, recv_request));
-		if (ctx->closing) {
-			pr_warn("local closing during open ret %d\n", ret);
-			ret = -ENODEV;
-		} else if (-ERESTARTSYS == ret) {
-			pr_warn("local interrupted ret %d\n", ret);
-			ret = -EINTR;
+		if (uninterruptible) { /* fe uinterruptible case */
+			wait_event(dev->openq,
+				hab_open_request_find(ctx, dev, listen, recv_request));
+			if (ctx->closing) {
+				pr_warn("local closing during open ret %d\n", ret);
+				ret = -ENODEV;
+			}
+		} else { /* fe interruptible case  */
+			ret = wait_event_interruptible(dev->openq,
+				hab_open_request_find(ctx, dev, listen, recv_request));
+			if (ctx->closing) {
+				pr_warn("local closing during open ret %d\n", ret);
+				ret = -ENODEV;
+			} else if (-ERESTARTSYS == ret) {
+				pr_warn("local interrupted ret %d\n", ret);
+				ret = -EINTR;
+			}
 		}
 	}
 
@@ -246,7 +270,7 @@ int hab_open_receive_cancel(struct physical_channel *pchan,
 		dev->openq_cnt++;
 		hab_spin_unlock(&dev->openlock, irqs_disabled);
 
-		wake_up_interruptible(&dev->openq);
+		wake_up(&dev->openq);
 	}
 
 	return 0;
@@ -256,11 +280,18 @@ int hab_open_receive_cancel(struct physical_channel *pchan,
 int hab_open_cancel_notify(struct hab_open_request *request)
 {
 	struct hab_header header = HAB_HEADER_INITIALIZER;
+	int ret = 0;
 
 	HAB_HEADER_SET_SIZE(header, sizeof(struct hab_open_send_data));
 	HAB_HEADER_SET_TYPE(header, HAB_PAYLOAD_TYPE_INIT_CANCEL);
 
-	return physical_channel_send(request->pchan, &header, &request->xdata);
+	ret = physical_channel_send(request->pchan, &header, &request->xdata,
+			HABMM_SOCKET_SEND_FLAGS_NON_BLOCKING);
+	if (ret != 0)
+		pr_err("pchan %s failed to send open cancel msg %d\n",
+			request->pchan->name, ret);
+
+	return ret;
 }
 
 /*

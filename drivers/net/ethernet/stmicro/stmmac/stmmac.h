@@ -205,6 +205,7 @@ struct stmmac_priv {
 
 	int tx_coalesce;
 	int hwts_tx_en;
+	int irq_number;
 	bool tx_path_in_lpi_mode;
 	bool tso;
 	int sph;

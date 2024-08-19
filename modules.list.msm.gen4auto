@@ -13,6 +13,7 @@ pinctrl-msm.ko
 pinctrl-slpi.ko
 pinctrl-lemans.ko
 qcom-dload-mode.ko
+qcom_ipcc.ko
 qcom_aoss.ko
 qcom_hwspinlock.ko
 qcom-pdc.ko

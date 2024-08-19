@@ -5,6 +5,7 @@
  * Copyright (C) 2016 Linaro Ltd.
  * Copyright (C) 2014 Sony Mobile Communications AB
  * Copyright (c) 2012-2013, 2020-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/clk.h>
@@ -810,7 +811,7 @@ static int q6v5_mpss_init_image(struct q6v5 *qproc, const struct firmware *fw)
 	void *ptr;
 	int ret;
 
-	metadata = qcom_mdt_read_metadata(qproc->dev, fw, qproc->hexagon_mdt_image, &size, NULL);
+	metadata = qcom_mdt_read_metadata(qproc->dev, fw, qproc->hexagon_mdt_image, &size, 0, NULL);
 	if (IS_ERR(metadata))
 		return PTR_ERR(metadata);
 
@@ -1925,6 +1926,42 @@ static const struct rproc_hexagon_res sdm845_mss = {
 	.version = MSS_SDM845,
 };
 
+static const struct rproc_hexagon_res qcs605_mss = {
+	.hexagon_mba_image = "mba.mbn",
+	.proxy_clk_names = (char*[]){
+			"xo",
+			"prng",
+			NULL
+	},
+	.reset_clk_names = (char*[]){
+			"iface",
+			"snoc_axi",
+			NULL
+	},
+	.active_clk_names = (char*[]){
+			"bus",
+			"mem",
+			"gpll0_mss",
+			"mnoc_axi",
+			NULL
+	},
+	.active_pd_names = (char*[]){
+			"load_state",
+			NULL
+	},
+	.proxy_pd_names = (char*[]){
+			"cx",
+			"mx",
+			"mss",
+			NULL
+	},
+	.need_mem_protection = true,
+	.has_alt_reset = true,
+	.has_mba_logs = false,
+	.has_spare_reg = false,
+	.version = MSS_SDM845,
+};
+
 static const struct rproc_hexagon_res msm8998_mss = {
 	.hexagon_mba_image = "mba.mbn",
 	.proxy_clk_names = (char*[]){
@@ -2068,6 +2105,7 @@ static const struct of_device_id q6v5_of_match[] = {
 	{ .compatible = "qcom,msm8998-mss-pil", .data = &msm8998_mss},
 	{ .compatible = "qcom,sc7180-mss-pil", .data = &sc7180_mss},
 	{ .compatible = "qcom,sdm845-mss-pil", .data = &sdm845_mss},
+	{ .compatible = "qcom,qcs605-mss-pil", .data = &qcs605_mss},
 	{ },
 };
 MODULE_DEVICE_TABLE(of, q6v5_of_match);

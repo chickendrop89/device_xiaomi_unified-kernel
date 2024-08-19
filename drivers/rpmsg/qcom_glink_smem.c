@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (c) 2016, 2019 Linaro Ltd
- * Copyright (c) 2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/io.h>
@@ -54,6 +54,18 @@ struct glink_smem_pipe {
 };
 
 #define to_smem_pipe(p) container_of(p, struct glink_smem_pipe, native)
+
+static void glink_smem_rx_reset(struct qcom_glink_pipe *np)
+{
+	struct glink_smem_pipe *pipe = to_smem_pipe(np);
+	*pipe->tail = 0;
+}
+
+static void glink_smem_tx_reset(struct qcom_glink_pipe *np)
+{
+	struct glink_smem_pipe *pipe = to_smem_pipe(np);
+	*pipe->head = 0;
+}
 
 static size_t glink_smem_rx_avail(struct qcom_glink_pipe *np)
 {
@@ -293,11 +305,13 @@ struct qcom_glink *qcom_glink_smem_register(struct device *parent,
 		goto err_put_dev;
 	}
 
+	rx_pipe->native.reset = glink_smem_rx_reset;
 	rx_pipe->native.avail = glink_smem_rx_avail;
 	rx_pipe->native.peak = glink_smem_rx_peak;
 	rx_pipe->native.advance = glink_smem_rx_advance;
 	rx_pipe->remote_pid = remote_pid;
 
+	tx_pipe->native.reset = glink_smem_tx_reset;
 	tx_pipe->native.avail = glink_smem_tx_avail;
 	tx_pipe->native.write = glink_smem_tx_write;
 	tx_pipe->remote_pid = remote_pid;

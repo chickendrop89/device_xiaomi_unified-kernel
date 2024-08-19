@@ -88,7 +88,7 @@ static int cqhci_crypto_qti_keyslot_program(struct blk_keyslot_manager *ksm,
 	get_mmio_data(&mmio_data, cq_host);
 
 	err = crypto_qti_keyslot_program(&mmio_data, key,
-					 slot, data_unit_mask, cap_idx);
+					 slot, data_unit_mask, cap_idx, SDCC_CE);
 	if (err)
 		pr_err("%s: failed with error %d\n", __func__, err);
 
@@ -105,7 +105,7 @@ static int cqhci_crypto_qti_keyslot_evict(struct blk_keyslot_manager *ksm,
 
 	get_mmio_data(&mmio_data, host);
 
-	err = crypto_qti_keyslot_evict(&mmio_data, slot);
+	err = crypto_qti_keyslot_evict(&mmio_data, slot, SDCC_CE);
 	if (err)
 		pr_err("%s: failed with error %d\n", __func__, err);
 

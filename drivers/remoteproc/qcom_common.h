@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 #ifndef __RPROC_QCOM_COMMON_H__
 #define __RPROC_QCOM_COMMON_H__
@@ -93,6 +93,9 @@ void qcom_remove_sysmon_subdev(struct qcom_sysmon *sysmon);
 bool qcom_sysmon_shutdown_acked(struct qcom_sysmon *sysmon);
 uint32_t qcom_sysmon_get_txn_id(struct qcom_sysmon *sysmon);
 int qcom_sysmon_get_reason(struct qcom_sysmon *sysmon, char *buf, size_t len);
+#if IS_ENABLED(CONFIG_QCOM_DS_SKIP_Q6_STOP)
+void qcom_sysmon_set_ops_stop(struct qcom_sysmon *sysmon, bool suspend);
+#endif
 #else
 static inline struct qcom_sysmon *qcom_add_sysmon_subdev(struct rproc *rproc,
 							 const char *name,
@@ -120,6 +123,11 @@ static inline int qcom_sysmon_get_reason(struct qcom_sysmon *sysmon,
 {
 	return -ENODEV;
 }
+
+#if IS_ENABLED(CONFIG_QCOM_DS_SKIP_Q6_STOP)
+static inline void qcom_sysmon_set_ops_stop(struct qcom_sysmon *sysmon,
+	bool suspend) { }
+#endif
 #endif
 
 #endif

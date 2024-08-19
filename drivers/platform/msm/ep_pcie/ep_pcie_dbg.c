@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2015-2020, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 /*
@@ -19,7 +19,7 @@
 #include "ep_pcie_phy.h"
 
 #define PCIE_PHYSICAL_DEVICE 0
-#define EP_PCIE_MAX_DEBUGFS_OPTION 27
+#define EP_PCIE_MAX_DEBUGFS_OPTION 28
 
 #define EYE_HEIGHT_STEP                         3
 #define MAX_EYE_HEIGHT                          128
@@ -65,6 +65,7 @@ static const char * const
 	"Disable dumping core/dbi registers when D3hot set by host",
 	"Dump edma registers",
 	"Dump clock CBCR registers",
+	"Dump ASPM stats",
 	"Positive eye sequence",
 	"Negative eye sequence"
 	};
@@ -309,8 +310,6 @@ static void ep_pcie_show_status(struct ep_pcie_dev_t *dev)
 	EP_PCIE_DBG_FS("PCIe: link is %s\n",
 		(dev->link_status == EP_PCIE_LINK_ENABLED)
 		? "enabled" : "disabled");
-	EP_PCIE_DBG_FS("the link is %s suspending\n",
-		dev->suspending ? "" : "not");
 	EP_PCIE_DBG_FS("the power is %s on\n",
 		dev->power_on ? "" : "not");
 	EP_PCIE_DBG_FS("linkdown_counter: %lu\n",

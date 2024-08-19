@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/cdev.h>
@@ -143,12 +143,14 @@ static bool subsystem_stats_debug_on;
 /* Subsystem stats before and after suspend */
 static struct sleep_stats *b_subsystem_stats;
 static struct sleep_stats *a_subsystem_stats;
+static struct sleep_stats *c_subsystem_stats;
 /* System sleep stats before and after suspend */
 static struct sleep_stats *b_system_stats;
 static struct sleep_stats *a_system_stats;
 static bool ddr_freq_update;
 static DEFINE_MUTEX(sleep_stats_mutex);
 static const struct stats_config *config;
+static struct sleep_stats_data *stats_data;
 
 static int stats_data_open(struct inode *inode, struct file *file)
 {
@@ -225,7 +227,7 @@ bool has_system_slept(void)
 
 	return sleep_flag;
 }
-EXPORT_SYMBOL(has_system_slept);
+EXPORT_SYMBOL_GPL(has_system_slept);
 
 bool has_subsystem_slept(void)
 {
@@ -236,7 +238,7 @@ bool has_subsystem_slept(void)
 		return sleep_flag;
 
 	for (i = 0; i < config->num_records; i++) {
-		if (subsystem_stats[i].not_present)
+		if (subsystem_stats[i].not_present || subsystem_stats[i].smem_item == APSS)
 			continue;
 
 		if ((b_subsystem_stats[i].count == a_subsystem_stats[i].count) &&
@@ -249,13 +251,35 @@ bool has_subsystem_slept(void)
 
 	return sleep_flag;
 }
-EXPORT_SYMBOL(has_subsystem_slept);
+EXPORT_SYMBOL_GPL(has_subsystem_slept);
+
+bool current_subsystem_sleep(void)
+{
+	int i, ret;
+	bool sleep_flag = true;
+
+	for (i = 0; i < ARRAY_SIZE(subsystem_stats); i++) {
+		ret = subsystem_sleep_stats(stats_data, c_subsystem_stats + i,
+					subsystem_stats[i].pid, subsystem_stats[i].smem_item);
+		if (ret != -ENODEV && subsystem_stats[i].smem_item != APSS) {
+			if (c_subsystem_stats[i].last_exited_at >
+					c_subsystem_stats[i].last_entered_at) {
+				pr_warn("Subsystem %s not in sleep\n", subsystem_stats[i].name);
+				sleep_flag = false;
+				break;
+			}
+		}
+	}
+
+	return sleep_flag;
+}
+EXPORT_SYMBOL_GPL(current_subsystem_sleep);
 
 void subsystem_sleep_debug_enable(bool enable)
 {
 	subsystem_stats_debug_on = enable;
 }
-EXPORT_SYMBOL(subsystem_sleep_debug_enable);
+EXPORT_SYMBOL_GPL(subsystem_sleep_debug_enable);
 
 static long stats_data_ioctl(struct file *file, unsigned int cmd,
 			     unsigned long arg)
@@ -410,7 +434,6 @@ static const struct file_operations stats_data_fops = {
 
 static int subsystem_stats_probe(struct platform_device *pdev)
 {
-	struct sleep_stats_data *stats_data;
 	struct resource *res;
 	void __iomem *offset_addr;
 	phys_addr_t stats_base;
@@ -544,6 +567,13 @@ skip_ddr_stats:
 	b_system_stats = devm_kcalloc(&pdev->dev, ARRAY_SIZE(system_stats),
 				      sizeof(struct sleep_stats), GFP_KERNEL);
 	if (!b_system_stats) {
+		ret = -ENOMEM;
+		goto fail;
+	}
+
+	c_subsystem_stats = devm_kcalloc(&pdev->dev, ARRAY_SIZE(subsystem_stats),
+					 sizeof(struct sleep_stats), GFP_KERNEL);
+	if (!c_subsystem_stats) {
 		ret = -ENOMEM;
 		goto fail;
 	}

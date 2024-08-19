@@ -32,6 +32,49 @@ config QPNP_QG
 	  To compile this driver as a module, choose M here: the
 	  module will be called qcom-qpnp-qg.
 
+config QPNP_FG_GEN3
+	tristate "QPNP GEN3 fuel gauge driver"
+	depends on MFD_SPMI_PMIC
+	depends on IIO
+	help
+	  Say Y here to enable the GEN3 Fuel Gauge driver. This adds support
+	  for battery fuel gauging and state of charge of battery connected to
+	  the fuel gauge. The state of charge is reported through a BMS power
+	  supply property and also sends uevents when the capacity is updated.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called qpnp-fg-gen3-main.
+
+config QPNP_FG_GEN4
+	tristate "QPNP GEN4 fuel gauge driver"
+	depends on MFD_SPMI_PMIC
+	depends on IIO
+	help
+	  Say Y here to enable the GEN4 Fuel Gauge driver. This adds support
+	  for battery fuel gauging and state of charge of battery connected to
+	  the device that has QTI PMICs like PM8150B. The state of charge is
+	  reported through a BMS power supply property and also sends uevents
+	  when the capacity is updated.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called qpnp-fg-gen4-main.
+
+config QPNP_SMB2
+	tristate "SMB2 Battery Charger"
+	depends on MFD_SPMI_PMIC && IIO
+	help
+	  Say Y to enables support for the SMB2 charging peripheral.
+	  The QPNP SMB2 charger driver supports the charger peripheral
+	  present in the PMICOBALT chip.
+	  The power supply and iio frameworks are used to communicate battery
+	  and usb properties to userspace and other driver consumers such
+	  as fuel gauge, USB, and USB-PD.
+	  VBUS and VCONN regulators are registered for supporting OTG,
+	  and powered Type-C cables respectively.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called qpnp-smb2-main.
+
 config QPNP_SMB5
 	tristate "SMB5 Battery Charger"
 	depends on MFD_SPMI_PMIC && IIO && TYPEC

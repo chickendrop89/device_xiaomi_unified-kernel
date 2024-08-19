@@ -11,6 +11,40 @@ unsigned int get_refcnt(struct kref ref)
 	return kref_read(&ref);
 }
 
+static void hab_ctx_free_work_fn(struct work_struct *work)
+{
+	struct uhab_context *ctx =
+		container_of(work, struct uhab_context, destroy_work);
+
+	hab_ctx_free_fn(ctx);
+}
+
+/*
+ * ctx can only be freed after all the vchan releases the refcnt
+ * and hab_release() is called.
+ *
+ * this function might be called in atomic context in following situations
+ * (only applicable to Linux):
+ * 1. physical_channel_rx_dispatch()->hab_msg_recv()->hab_vchan_put()
+ * ->hab_ctx_put()->hab_ctx_free() in tasklet.
+ * 2. hab client holds spin_lock and calls hab_vchan_close()->hab_vchan_put()
+ * ->hab_vchan_free()->hab_ctx_free().
+ */
+void hab_ctx_free_os(struct kref *ref)
+{
+	struct uhab_context *ctx =
+		container_of(ref, struct uhab_context, refcount);
+
+	if (likely(preemptible())) {
+		hab_ctx_free_fn(ctx);
+	} else {
+		pr_info("In non-preemptive context now, ctx owner %d\n",
+			ctx->owner);
+		INIT_WORK(&ctx->destroy_work, hab_ctx_free_work_fn);
+		schedule_work(&ctx->destroy_work);
+	}
+}
+
 static int hab_open(struct inode *inodep, struct file *filep)
 {
 	int result = 0;
@@ -312,10 +346,9 @@ static int hab_power_down_callback(
 	case SYS_HALT:
 	case SYS_POWER_OFF:
 		pr_debug("reboot called %ld\n", action);
-		hab_hypervisor_unregister(); /* only for single VM guest */
 		break;
 	}
-	pr_debug("reboot called %ld done\n", action);
+	pr_info("reboot called %ld done\n", action);
 	return NOTIFY_DONE;
 }
 
@@ -327,18 +360,28 @@ static void reclaim_cleanup(struct work_struct *reclaim_work)
 {
 	struct export_desc *exp = NULL, *exp_tmp = NULL;
 	struct export_desc_super *exp_super = NULL;
+	struct physical_channel *pchan = NULL;
+	LIST_HEAD(free_list);
 
 	pr_debug("reclaim worker called\n");
 	spin_lock(&hab_driver.reclaim_lock);
 	list_for_each_entry_safe(exp, exp_tmp, &hab_driver.reclaim_list, node) {
 		exp_super = container_of(exp, struct export_desc_super, exp);
-		if (exp_super->remote_imported == 0) {
-			list_del(&exp->node);
-			pr_info("cleanup exp id %d\n", exp->export_id);
-			habmem_export_put(exp_super);
-		}
+		if (exp_super->remote_imported == 0)
+			list_move(&exp->node, &free_list);
 	}
 	spin_unlock(&hab_driver.reclaim_lock);
+
+	list_for_each_entry_safe(exp, exp_tmp, &free_list, node) {
+		list_del(&exp->node);
+		exp_super = container_of(exp, struct export_desc_super, exp);
+		pchan = exp->pchan;
+		spin_lock_bh(&pchan->expid_lock);
+		idr_remove(&pchan->expid_idr, exp->export_id);
+		spin_unlock_bh(&pchan->expid_lock);
+		pr_info("cleanup exp id %u from %s\n", exp->export_id, pchan->name);
+		habmem_export_put(exp_super);
+	}
 }
 
 static int __init hab_init(void)

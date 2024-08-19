@@ -29,6 +29,11 @@
 #define OPMODE_MASK				(0x3 << 3)
 #define OPMODE_NONDRIVING			(0x1 << 3)
 #define SLEEPM					BIT(0)
+#define OPMODE_NORMAL				(0x00)
+#define TERMSEL					BIT(5)
+
+#define USB2_PHY_USB_PHY_UTMI_CTRL1		(0x40)
+#define XCVRSEL					BIT(0)
 
 #define USB2_PHY_USB_PHY_UTMI_CTRL5		(0x50)
 #define POR					BIT(1)
@@ -361,7 +366,7 @@ static int msm_hsphy_enable_power(struct msm_hsphy *phy, bool on)
 			__func__, on ? "on" : "off", phy->power_enabled);
 
 	if (phy->power_enabled == on) {
-		dev_dbg(phy->phy.dev, "PHYs' regulators are already ON.\n");
+		dev_dbg(phy->phy.dev, "PHYs' regulators are already %s.\n", on ? "ON" : "OFF");
 		return 0;
 	}
 
@@ -606,7 +611,15 @@ static int msm_hsphy_set_suspend(struct usb_phy *uphy, int suspend)
 
 suspend:
 	if (suspend) { /* Bus suspend */
-		if (phy->cable_connected) {
+		/*
+		 * The HUB class drivers calls usb_phy_notify_disconnect() upon a device
+		 * disconnect. Consider a scenario where a USB device is disconnected without
+		 * detaching the OTG cable. phy->cable_connected is marked false due to above
+		 * mentioned call path. Now, while entering low power mode (host bus suspend),
+		 * we come here and turn off regulators thinking no cable is connected. Prevent
+		 * this by not turning off regulators while in host mode.
+		 */
+		if (phy->cable_connected || (phy->phy.flags & PHY_HOST_MODE)) {
 			/* Enable auto-resume functionality during host mode
 			 * bus suspend with some FS/HS peripheral connected.
 			 */
@@ -713,6 +726,63 @@ static int msm_hsphy_set_power(struct usb_phy *uphy, unsigned int mA)
 
 	phy->vbus_draw = mA;
 	schedule_work(&phy->vbus_draw_work);
+
+	return 0;
+}
+
+#define DP_PULSE_WIDTH_MSEC 200
+static enum usb_charger_type usb_phy_drive_dp_pulse(struct usb_phy *uphy)
+{
+	struct msm_hsphy *phy = container_of(uphy, struct msm_hsphy, phy);
+	int ret;
+
+	ret = msm_hsphy_enable_power(phy, true);
+	if (ret < 0) {
+		dev_dbg(phy->phy.dev,
+			"dpdm regulator enable failed:%d\n", ret);
+		return 0;
+	}
+	msm_hsphy_enable_clocks(phy, true);
+	/* set utmi_phy_cmn_cntrl_override_en &
+	 * utmi_phy_datapath_ctrl_override_en
+	 */
+	msm_usb_write_readback(phy->base, USB2_PHY_USB_PHY_CFG0,
+				UTMI_PHY_CMN_CTRL_OVERRIDE_EN,
+				UTMI_PHY_CMN_CTRL_OVERRIDE_EN);
+	msm_usb_write_readback(phy->base, USB2_PHY_USB_PHY_CFG0,
+				UTMI_PHY_DATAPATH_CTRL_OVERRIDE_EN,
+				UTMI_PHY_DATAPATH_CTRL_OVERRIDE_EN);
+	/* set opmode to normal i.e. 0x0 & termsel to fs */
+	msm_usb_write_readback(phy->base, USB2_PHY_USB_PHY_UTMI_CTRL0,
+				OPMODE_MASK, OPMODE_NORMAL);
+	msm_usb_write_readback(phy->base, USB2_PHY_USB_PHY_UTMI_CTRL0,
+				TERMSEL, TERMSEL);
+	/* set xcvrsel to fs */
+	msm_usb_write_readback(phy->base, USB2_PHY_USB_PHY_UTMI_CTRL1,
+					XCVRSEL, XCVRSEL);
+	msleep(DP_PULSE_WIDTH_MSEC);
+	/* clear termsel to fs */
+	msm_usb_write_readback(phy->base, USB2_PHY_USB_PHY_UTMI_CTRL0,
+				TERMSEL, 0x00);
+	/* clear xcvrsel */
+	msm_usb_write_readback(phy->base, USB2_PHY_USB_PHY_UTMI_CTRL1,
+					XCVRSEL, 0x00);
+	/* clear utmi_phy_cmn_cntrl_override_en &
+	 * utmi_phy_datapath_ctrl_override_en
+	 */
+	msm_usb_write_readback(phy->base, USB2_PHY_USB_PHY_CFG0,
+				UTMI_PHY_CMN_CTRL_OVERRIDE_EN, 0x00);
+	msm_usb_write_readback(phy->base, USB2_PHY_USB_PHY_CFG0,
+				UTMI_PHY_DATAPATH_CTRL_OVERRIDE_EN, 0x00);
+
+	msleep(20);
+
+	msm_hsphy_enable_clocks(phy, false);
+	ret = msm_hsphy_enable_power(phy, false);
+	if (ret < 0) {
+		dev_dbg(phy->phy.dev,
+			"dpdm regulator disable failed:%d\n", ret);
+	}
 
 	return 0;
 }
@@ -1021,6 +1091,7 @@ static int msm_hsphy_probe(struct platform_device *pdev)
 	phy->phy.notify_disconnect	= msm_hsphy_notify_disconnect;
 	phy->phy.set_power		= msm_hsphy_set_power;
 	phy->phy.type			= USB_PHY_TYPE_USB2;
+	phy->phy.charger_detect		= usb_phy_drive_dp_pulse;
 
 	ret = usb_add_phy_dev(&phy->phy);
 	if (ret)

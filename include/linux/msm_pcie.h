@@ -226,6 +226,17 @@ int msm_pcie_reg_dump(struct pci_dev *pci_dev, u8 *buff, u32 len);
  */
 int msm_pcie_dsp_link_control(struct pci_dev *pci_dev,
 				    bool link_enable);
+
+/*
+ * Retrains the link between the port and endpoint to
+ * the specified speed.
+ * @ep_dev: pci_dev structure of the endpoint
+ * target_link_speed: target link speed for retraining
+ *
+ * Return: 0 on success, negative value on error
+ */
+int msm_pcie_retrain_port_link(struct pci_dev *ep_dev,
+				u16 target_link_speed);
 #else /* !CONFIG_PCI_MSM */
 static inline int msm_pcie_pm_control(enum msm_pcie_pm_opt pm_opt, u32 busnr,
 			void *user, void *data, u32 options)

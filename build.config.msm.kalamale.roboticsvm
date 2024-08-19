@@ -1,0 +1,36 @@
+################################################################################
+## Inheriting configs from ACK
+. ${ROOT_DIR}/common/build.config.common
+. ${ROOT_DIR}/common/build.config.aarch64
+
+################################################################################
+## Variant setup
+MSM_ARCH=kalamale_roboticsvm
+VARIANTS=(defconfig debug_defconfig)
+[ -z "${VARIANT}" ] && VARIANT=debug_defconfig
+
+if [ -e "${ROOT_DIR}/msm-kernel" -a "${KERNEL_DIR}" = "common" ]; then
+	KERNEL_DIR="msm-kernel"
+fi
+
+################################################################################
+## Inheriting MSM configs
+. ${KERNEL_DIR}/build.config.msm.common
+
+
+DEFCONFIG="generic_vm_defconfig"
+
+function build_defconfig_fragments() {
+	if [[ "${VARIANT}" =~ ^(defconfig|debug_defconfig)$ ]]; then
+		apply_defconfig_fragment ${KERNEL_DIR}/arch/${ARCH}/configs/vendor/${MSM_ARCH}.config vendor/${MSM_ARCH}_defconfig
+		if [ "${VARIANT}" = defconfig ]; then
+			return
+		fi
+		apply_defconfig_fragment ${KERNEL_DIR}/arch/${ARCH}/configs/vendor/${MSM_ARCH}_debug.config vendor/${MSM_ARCH}-debug_defconfig
+	else
+		echo "Variant '${VARIANT}' unsupported by gki"
+		exit 1
+	fi
+}
+build_defconfig_fragments
+

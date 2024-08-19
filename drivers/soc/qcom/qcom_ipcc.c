@@ -10,6 +10,9 @@
 #include <linux/platform_device.h>
 #include <linux/mailbox_controller.h>
 #include <dt-bindings/soc/qcom,ipcc.h>
+#ifdef CONFIG_PM_SLEEP
+#include <linux/suspend.h>
+#endif
 
 /* IPCC Register offsets */
 #define IPCC_REG_SEND_ID		0x0C
@@ -58,6 +61,7 @@ struct ipcc_mbox_chan {
 	u16 signal_id;
 	struct mbox_chan *chan;
 	struct ipcc_protocol_data *proto_data;
+	u16 is_signal_enabled;
 };
 
 static inline u32 qcom_ipcc_get_packed_id(u16 client_id, u16 signal_id)
@@ -102,6 +106,33 @@ static irqreturn_t qcom_ipcc_irq_fn(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
+#ifdef CONFIG_PM_SLEEP
+static void qcom_ipcc_update_irq_status(struct irq_domain *domain,
+			irq_hw_number_t hwirq, bool is_enabled)
+{
+	struct ipcc_mbox_chan *ipcc_mbox_chan;
+	int chan_id;
+	struct ipcc_protocol_data *proto_data = domain->host_data;
+
+	for (chan_id = 0; chan_id < proto_data->mbox.num_chans; chan_id++) {
+		ipcc_mbox_chan = proto_data->chans[chan_id].con_priv;
+		if (!ipcc_mbox_chan)
+			break;
+
+		if (ipcc_mbox_chan->client_id == qcom_ipcc_get_client_id(hwirq) &&
+			ipcc_mbox_chan->signal_id == qcom_ipcc_get_signal_id(hwirq)) {
+			ipcc_mbox_chan->is_signal_enabled = is_enabled;
+			break;
+		}
+	}
+}
+#else
+static void qcom_ipcc_update_irq_status(struct irq_domain *domain,
+		irq_hw_number_t hwirq, bool is_enabled)
+{
+}
+#endif
+
 static void qcom_ipcc_mask_irq(struct irq_data *irqd)
 {
 	struct ipcc_protocol_data *proto_data;
@@ -115,6 +146,7 @@ static void qcom_ipcc_mask_irq(struct irq_data *irqd)
 		"%s: Disabling interrupts for: client_id: %u; signal_id: %u\n",
 		__func__, sender_client_id, sender_signal_id);
 
+	qcom_ipcc_update_irq_status(irqd->domain, hwirq, 0);
 	writel(hwirq, proto_data->base + IPCC_REG_RECV_SIGNAL_DISABLE);
 }
 
@@ -131,6 +163,7 @@ static void qcom_ipcc_unmask_irq(struct irq_data *irqd)
 		"%s: Enabling interrupts for: client_id: %u; signal_id: %u\n",
 		__func__, sender_client_id, sender_signal_id);
 
+	qcom_ipcc_update_irq_status(irqd->domain, hwirq, 1);
 	writel(hwirq, proto_data->base + IPCC_REG_RECV_SIGNAL_ENABLE);
 }
 
@@ -277,7 +310,6 @@ static int qcom_ipcc_setup_mbox(struct ipcc_protocol_data *proto_data,
 			of_node_put(curr_ph.np);
 			if (!ret && curr_ph.np == controller_dn) {
 				proto_data->num_chans++;
-				break;
 			}
 		}
 	}
@@ -302,6 +334,75 @@ static int qcom_ipcc_setup_mbox(struct ipcc_protocol_data *proto_data,
 
 	return mbox_controller_register(mbox);
 }
+
+#ifdef CONFIG_PM_SLEEP
+static void qcom_ipcc_restore_unmask_irq(struct device *dev)
+{
+	struct ipcc_mbox_chan *ipcc_mbox_chan;
+	int chan_id;
+	u32 packed_id;
+	struct ipcc_protocol_data *proto_data = dev_get_drvdata(dev);
+
+	if (!proto_data || !proto_data->num_chans)
+		return;
+
+	for (chan_id = 0; chan_id < proto_data->num_chans; chan_id++) {
+		ipcc_mbox_chan = proto_data->chans[chan_id].con_priv;
+		if (!ipcc_mbox_chan)
+			break;
+
+		packed_id = qcom_ipcc_get_packed_id(ipcc_mbox_chan->client_id,
+					ipcc_mbox_chan->signal_id);
+		if (ipcc_mbox_chan->is_signal_enabled) {
+			dev_dbg(dev,
+				"%s: restore 0x%lx for client_id: %u signal_id: %u\n",
+				__func__, packed_id, ipcc_mbox_chan->client_id,
+				ipcc_mbox_chan->signal_id);
+			writel(packed_id,
+				proto_data->base + IPCC_REG_RECV_SIGNAL_ENABLE);
+		}
+	}
+}
+
+static int qcom_ipcc_pm_suspend(struct device *dev)
+{
+	return 0;
+}
+
+static int qcom_ipcc_pm_resume(struct device *dev)
+{
+	int virq;
+	struct irq_desc *desc;
+	const char *name = "null";
+	u32 packed_id;
+	struct ipcc_protocol_data *proto_data = dev_get_drvdata(dev);
+
+	if (pm_suspend_via_firmware()) {
+		qcom_ipcc_restore_unmask_irq(dev);
+		return 0;
+	}
+
+	packed_id = readl(proto_data->base + IPCC_REG_RECV_ID);
+	if (packed_id == IPCC_NO_PENDING_IRQ)
+		return 0;
+
+	virq = irq_find_mapping(proto_data->irq_domain, packed_id);
+	desc = irq_to_desc(virq);
+	if (desc == NULL)
+		name = "stray irq";
+	else if (desc->action && desc->action->name)
+		name = desc->action->name;
+
+	pr_warn("%s: %d triggered %s (client-id: %u; signal-id: %u\n",
+		__func__, virq, name, qcom_ipcc_get_client_id(packed_id),
+		qcom_ipcc_get_signal_id(packed_id));
+
+	return 0;
+}
+#else
+#define qcom_ipcc_pm_suspend NULL
+#define qcom_ipcc_pm_resume NULL
+#endif
 
 static int qcom_ipcc_probe(struct platform_device *pdev)
 {
@@ -354,7 +455,8 @@ static int qcom_ipcc_probe(struct platform_device *pdev)
 	}
 
 	ret = devm_request_irq(&pdev->dev, proto_data->irq, qcom_ipcc_irq_fn,
-				IRQF_TRIGGER_HIGH | IRQF_NO_SUSPEND, name, proto_data);
+				IRQF_TRIGGER_HIGH | IRQF_NO_SUSPEND |
+				IRQF_NO_THREAD, name, proto_data);
 	if (ret < 0) {
 		dev_err(&pdev->dev, "Failed to register the irq: %d\n", ret);
 		goto err_req_irq;
@@ -390,12 +492,21 @@ static const struct of_device_id qcom_ipcc_of_match[] = {
 };
 MODULE_DEVICE_TABLE(of, qcom_ipcc_of_match);
 
+#ifdef CONFIG_PM_SLEEP
+static const struct dev_pm_ops qcom_ipcc_dev_pm_ops = {
+	SET_NOIRQ_SYSTEM_SLEEP_PM_OPS(qcom_ipcc_pm_suspend, qcom_ipcc_pm_resume)
+};
+#endif
+
 static struct platform_driver qcom_ipcc_driver = {
 	.probe = qcom_ipcc_probe,
 	.remove = qcom_ipcc_remove,
 	.driver = {
 		.name = "qcom_ipcc",
 		.of_match_table = qcom_ipcc_of_match,
+#ifdef CONFIG_PM_SLEEP
+		.pm = &qcom_ipcc_dev_pm_ops,
+#endif
 	},
 };
 

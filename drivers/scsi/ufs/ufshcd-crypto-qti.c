@@ -2,7 +2,7 @@
 /*
  * UFS Crypto ops QTI implementation.
  *
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <crypto/algapi.h>
@@ -83,7 +83,7 @@ static int ufshcd_crypto_qti_keyslot_program(struct blk_keyslot_manager *ksm,
 
 	get_mmio_data(&mmio_data, host);
 	err = crypto_qti_keyslot_program(&mmio_data, key, slot,
-					data_unit_mask, cap_idx);
+					data_unit_mask, cap_idx, UFS_CE);
 	if (err)
 		pr_err("%s: failed with error %d\n", __func__, err);
 
@@ -115,7 +115,7 @@ static int ufshcd_crypto_qti_keyslot_evict(struct blk_keyslot_manager *ksm,
 	}
 
 	get_mmio_data(&mmio_data, host);
-	err = crypto_qti_keyslot_evict(&mmio_data, slot);
+	err = crypto_qti_keyslot_evict(&mmio_data, slot, UFS_CE);
 	if (err)
 		pr_err("%s: failed with error %d\n", __func__, err);
 
@@ -186,6 +186,7 @@ int ufshcd_qti_hba_init_crypto_capabilities(struct ufs_hba *hba)
 {
 	int cap_idx;
 	int err = 0;
+	unsigned int max_slots = 0;
 	enum blk_crypto_mode_num blk_mode_num;
 
 	/*
@@ -212,9 +213,27 @@ int ufshcd_qti_hba_init_crypto_capabilities(struct ufs_hba *hba)
 		goto out;
 	}
 
+	max_slots = hba->crypto_capabilities.config_count + 1;
+#if IS_ENABLED(CONFIG_QTI_CRYPTO_FDE)
+	if (max_slots > crypto_qti_ice_get_num_fde_slots()) {
+		/*
+		 * Reduce the total number of slots available to FBE
+		 * (by the number reserved for the FDE)
+		 * Check at least one slot for backward compatibility,
+		 * otherwise return failure
+		 */
+		if (max_slots - crypto_qti_ice_get_num_fde_slots() < 1) {
+			pr_err("%s: Too much slots allocated to fde\n", __func__);
+			err = -EINVAL;
+			goto out;
+		} else {
+			max_slots = max_slots - crypto_qti_ice_get_num_fde_slots();
+		}
+	}
+#endif
+
 	/* The actual number of configurations supported is (CFGC+1) */
-	err = devm_blk_ksm_init(hba->dev, &hba->ksm,
-			hba->crypto_capabilities.config_count + 1);
+	err = devm_blk_ksm_init(hba->dev, &hba->ksm, max_slots);
 	if (err)
 		goto out;
 

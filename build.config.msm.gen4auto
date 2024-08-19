@@ -31,6 +31,10 @@ if [ "${KERNEL_CMDLINE_CONSOLE_AUTO}" != "0" ]; then
 	KERNEL_VENDOR_CMDLINE+=' console=ttyMSM0,115200n8 earlycon=qcom_geni,0xa8c000 qcom_geni_serial.con_enabled=1 androidboot.first_stage_console=1 '
 fi
 
+if [ "${VARIANT}" = "consolidate" ]; then
+	KASAN=sw_tags
+fi
+
 KERNEL_VENDOR_CMDLINE+=' bootconfig '
 
 ################################################################################

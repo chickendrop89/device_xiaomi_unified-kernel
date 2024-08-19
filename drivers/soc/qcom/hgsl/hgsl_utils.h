@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2020-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022,2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 #ifndef __HGSL_UTILS_H
 #define __HGSL_UTILS_H
@@ -62,7 +62,7 @@ static inline void hgsl_log(unsigned int level, const char * const fun,
 	const char *tag = NULL;
 	unsigned int offset = 0;
 	struct pid *pid = task_tgid(current);
-	struct task_struct *task = pid_task(pid, PIDTYPE_PID);
+	struct task_struct *task = get_pid_task(pid, PIDTYPE_PID);
 
 	switch (level) {
 	case LOG_LEVEL_DEBUG:

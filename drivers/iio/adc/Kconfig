@@ -802,6 +802,21 @@ config QCOM_PM8XXX_XOADC
 	  To compile this driver as a module, choose M here: the module
 	  will be called qcom-pm8xxx-xoadc.
 
+config QCOM_RRADC
+	tristate "Qualcomm Technologies Inc. PMIC Round robin ADC"
+	depends on SPMI
+	select REGMAP_SPMI
+	help
+	  This is the PMIC Round Robin ADC driver.
+
+	  The driver supports multiple channels read used for telemetry
+	  and supports clients to read batt_id, batt_therm, PMIC die
+	  temperature, USB_IN and DC_IN voltage and current.
+	  The RRADC is a 10-bit ADC.
+
+	  To compile this driver as a module, choose M here: the module will
+	  be called qcom-rradc.
+
 config QCOM_SPMI_IADC
 	tristate "Qualcomm SPMI PMIC current ADC"
 	depends on SPMI

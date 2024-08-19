@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #define pr_fmt(fmt) "clk: %s: " fmt, __func__
@@ -57,6 +57,7 @@ static struct clk_debug_mux apss_cc_debug_mux = {
 	.post_div_shift = 11,
 	.post_div_val = 1,
 	.mux_sels = apss_cc_debug_mux_sels,
+	.num_mux_sels = ARRAY_SIZE(apss_cc_debug_mux_sels),
 	.pre_div_vals = apss_cc_debug_mux_pre_divs,
 	.hw.init = &(const struct clk_init_data){
 		.name = "apss_cc_debug_mux",
@@ -181,6 +182,7 @@ static struct clk_debug_mux cam_cc_debug_mux = {
 	.post_div_shift = 0,
 	.post_div_val = 4,
 	.mux_sels = cam_cc_debug_mux_sels,
+	.num_mux_sels = ARRAY_SIZE(cam_cc_debug_mux_sels),
 	.hw.init = &(const struct clk_init_data){
 		.name = "cam_cc_debug_mux",
 		.ops = &clk_debug_mux_ops,
@@ -280,6 +282,7 @@ static struct clk_debug_mux disp_cc_0_debug_mux = {
 	.post_div_shift = 0,
 	.post_div_val = 4,
 	.mux_sels = disp_cc_0_debug_mux_sels,
+	.num_mux_sels = ARRAY_SIZE(disp_cc_0_debug_mux_sels),
 	.hw.init = &(const struct clk_init_data){
 		.name = "disp_cc_0_debug_mux",
 		.ops = &clk_debug_mux_ops,
@@ -379,6 +382,7 @@ static struct clk_debug_mux disp_cc_1_debug_mux = {
 	.post_div_shift = 0,
 	.post_div_val = 4,
 	.mux_sels = disp_cc_1_debug_mux_sels,
+	.num_mux_sels = ARRAY_SIZE(disp_cc_1_debug_mux_sels),
 	.hw.init = &(const struct clk_init_data){
 		.name = "disp_cc_1_debug_mux",
 		.ops = &clk_debug_mux_ops,
@@ -742,6 +746,7 @@ static struct clk_debug_mux gcc_debug_mux = {
 	.post_div_shift = 0,
 	.post_div_val = 2,
 	.mux_sels = gcc_debug_mux_sels,
+	.num_mux_sels = ARRAY_SIZE(gcc_debug_mux_sels),
 	.hw.init = &(const struct clk_init_data){
 		.name = "gcc_debug_mux",
 		.ops = &clk_debug_mux_ops,
@@ -795,6 +800,7 @@ static struct clk_debug_mux gpu_cc_debug_mux = {
 	.post_div_shift = 0,
 	.post_div_val = 2,
 	.mux_sels = gpu_cc_debug_mux_sels,
+	.num_mux_sels = ARRAY_SIZE(gpu_cc_debug_mux_sels),
 	.hw.init = &(const struct clk_init_data){
 		.name = "gpu_cc_debug_mux",
 		.ops = &clk_debug_mux_ops,

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 #include <linux/compat.h>
 #include <linux/fs.h>
@@ -356,7 +357,7 @@ static int compat_fastrpc_ioctl_invoke(struct file *filp,
 	if (err)
 		return err;
 	VERIFY(err, 0 == (err = fastrpc_internal_invoke(fl,
-						fl->mode, USER_MSG, inv)));
+						fl->mode, COMPAT_MSG, inv)));
 
 	kfree(inv);
 	return err;
@@ -495,7 +496,7 @@ static int compat_fastrpc_ioctl_invoke2(struct file *filp,
 	if (err)
 		return err;
 
-	VERIFY(err, 0 == (err = fastrpc_internal_invoke2(fl, inv)));
+	VERIFY(err, 0 == (err = fastrpc_internal_invoke2(fl, inv, true)));
 	return err;
 }
 
@@ -1021,7 +1022,16 @@ long compat_fastrpc_device_ioctl(struct file *filp, unsigned int cmd,
 	if (!filp->f_op || !filp->f_op->unlocked_ioctl)
 		return -ENOTTY;
 
-	fl->is_compat = true;
+	if (fl->servloc_name) {
+		err = fastrpc_check_pd_status(fl,
+			AUDIO_PDR_SERVICE_LOCATION_CLIENT_NAME);
+		err |= fastrpc_check_pd_status(fl,
+			SENSORS_PDR_ADSP_SERVICE_LOCATION_CLIENT_NAME);
+		err |= fastrpc_check_pd_status(fl,
+			SENSORS_PDR_SLPI_SERVICE_LOCATION_CLIENT_NAME);
+		if (err)
+			return err;
+	}
 	switch (cmd) {
 	case COMPAT_FASTRPC_IOCTL_INVOKE:
 	case COMPAT_FASTRPC_IOCTL_INVOKE_FD:
@@ -1048,11 +1058,14 @@ long compat_fastrpc_device_ioctl(struct file *filp, unsigned int cmd,
 			return -EFAULT;
 		VERIFY(err, 0 == compat_get_fastrpc_ioctl_munmap_64(unmap32,
 							unmap));
-		if (err)
+		if (err) {
+			kfree(unmap);
 			return err;
+		}
 
 		VERIFY(err, 0 == (err = fastrpc_internal_munmap(fl,
 							unmap)));
+		kfree(unmap);
 		return err;
 	}
 	case COMPAT_FASTRPC_IOCTL_INIT:
@@ -1069,10 +1082,12 @@ long compat_fastrpc_device_ioctl(struct file *filp, unsigned int cmd,
 			return -EFAULT;
 		VERIFY(err, 0 == compat_get_fastrpc_ioctl_init(init32,
 							init, cmd));
-		if (err)
+		if (err) {
+			kfree(init);
 			return err;
+		}
 		VERIFY(err, 0 == (err = fastrpc_init_process(fl, init)));
-
+		kfree(init);
 		return err;
 
 	}
@@ -1089,11 +1104,14 @@ long compat_fastrpc_device_ioctl(struct file *filp, unsigned int cmd,
 			return -EFAULT;
 		err = get_user(u, info32);
 		memcpy(info, &u, sizeof(u));
-		if (err)
+		if (err) {
+			kfree(info);
 			return err;
+		}
 		VERIFY(err, 0 == (err = fastrpc_get_info(fl, info)));
 		memcpy(&u, info, sizeof(*info));
 		err |= put_user(u, info32);
+		kfree(info);
 		return err;
 	}
 	case FASTRPC_IOCTL_SETMODE:

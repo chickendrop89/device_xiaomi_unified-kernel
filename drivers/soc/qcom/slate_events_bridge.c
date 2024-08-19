@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/delay.h>
@@ -680,6 +680,8 @@ static int seb_init(struct seb_priv *dev)
 	mutex_init(&dev->glink_mutex);
 	mutex_init(&dev->seb_state_mutex);
 
+	mutex_init(&seb_api_mutex);
+
 	dev->seb_wq =
 		create_singlethread_workqueue("seb-work-queue");
 	if (!dev->seb_wq) {
@@ -765,6 +767,7 @@ static int seb_remove(struct platform_device *pdev)
 	destroy_workqueue(dev->seb_wq);
 	input_free_device(dev->input);
 	wakeup_source_unregister(dev->seb_ws);
+	mutex_destroy(&seb_api_mutex);
 	return 0;
 }
 

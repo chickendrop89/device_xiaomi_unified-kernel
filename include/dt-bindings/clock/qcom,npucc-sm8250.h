@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2022, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022, 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _DT_BINDINGS_CLK_QCOM_NPU_CC_SM8250_H
@@ -55,5 +55,8 @@
 #define NPU_CC_CAL_HM1_BCR					1
 #define NPU_CC_CORE_BCR						2
 #define NPU_CC_DSP_BCR						3
+#define NPU_CC_DPM_TEMP_CLK_ARES				4
+#define NPU_CC_LLM_CURR_CLK_ARES				5
+#define NPU_CC_LLM_TEMP_CLK_ARES				6
 
 #endif

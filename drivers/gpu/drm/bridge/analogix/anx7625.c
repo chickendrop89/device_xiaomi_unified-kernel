@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright(c) 2020, Analogix Semiconductor. All rights reserved.
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  */
 #include <linux/gcd.h>
@@ -1107,7 +1107,7 @@ static void anx7625_hpd_polling(struct anx7625_data *ctx)
 				 ctx, val,
 				 ((val & HPD_STATUS) || (val < 0)),
 				 5000,
-				 5000 * 100);
+				 5000 * 30);
 	if (ret) {
 		DRM_DEV_ERROR(dev, "no hpd.\n");
 		return;

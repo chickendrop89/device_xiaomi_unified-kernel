@@ -1089,7 +1089,7 @@ int main_get_charge_type(void)
 }
 EXPORT_SYMBOL_GPL(main_get_charge_type);
 
-#if 1
+#ifdef DEBUG
 static void bq2589x_dump_regs(struct bq2589x *bq)
 {
 	int addr, ret;
@@ -1981,7 +1981,10 @@ but ovp is very speed ,so this code not working */
                 }
         }
 #endif
-	bq2589x_dump_regs(bq);
+	#ifdef DEBUG
+		bq2589x_dump_regs(bq);
+	#endif
+
 	bq2589x_reset_watchdog_timer(bq);
 	bq->rsoc = bq2589x_read_batt_rsoc(bq);
 	bq->vbus_volt = bq2589x_adc_read_vbus_volt(bq);

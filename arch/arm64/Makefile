@@ -44,6 +44,13 @@ KBUILD_AFLAGS	+= $(compat_vdso)
 KBUILD_CFLAGS	+= $(call cc-option,-mabi=lp64)
 KBUILD_AFLAGS	+= $(call cc-option,-mabi=lp64)
 
+# Optimize for SM6225-AD
+KBUILD_CFLAGS += $(call cc-option,-mcpu=cortex-a73.cortex-a53)
+KBUILD_CFLAGS += $(call cc-option,-mtune=kryo)
+
+KBUILD_AFLAGS += $(call cc-option,-mcpu=cortex-a73.cortex-a53)
+KBUILD_AFLAGS += $(call cc-option,-mtune=kryo)
+
 # Avoid generating .eh_frame* sections.
 KBUILD_CFLAGS	+= -fno-asynchronous-unwind-tables -fno-unwind-tables
 KBUILD_AFLAGS	+= -fno-asynchronous-unwind-tables -fno-unwind-tables
@@ -152,7 +159,6 @@ KBUILD_IMAGE	:= $(boot)/Image.gz
 ifndef KBUILD_MIXED_TREE
 all:	Image.gz
 endif
-
 
 Image: vmlinux
 	$(Q)$(MAKE) $(build)=$(boot) $(boot)/$@

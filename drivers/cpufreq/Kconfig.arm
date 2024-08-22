@@ -373,3 +373,10 @@ config CPU_FREQ_MSM
 	help
 	  This enables the CPUFreq driver for Qualcomm Technologies, Inc. CPUs
 
+config CPU_MAX_FREQ
+	tristate "CPUMAXFREQ vendor driver"
+	depends on CPU_FREQ
+	help
+	  A simple driver that returns the max freqency supported by any core of the processor
+	  
+	  Imported from xiaomi open-source tree

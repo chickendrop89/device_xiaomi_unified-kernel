@@ -102,7 +102,6 @@
   alloc_anon_inode
   __alloc_pages
   __ClearPageMovable
-  contig_page_data
   dec_zone_page_state
   finish_wait
   flush_work
@@ -144,3 +143,4 @@
 
 # preserved by --additions-only
   android_kmalloc_64_create
+  contig_page_data

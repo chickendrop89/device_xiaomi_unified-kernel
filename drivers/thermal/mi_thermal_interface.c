@@ -132,7 +132,7 @@ static int cpu_thermal_init(void)
 					__func__, cpu);
 			return -ESRCH;
 		}
-		printk(KERN_ERR "%s cpu=%d\n", __func__, cpu);
+		printk(KERN_DEBUG "%s cpu=%d\n", __func__, cpu);
 
 		i = cpufreq_table_count_valid_entries(policy);
 		if (!i) {

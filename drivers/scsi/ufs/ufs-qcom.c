@@ -5486,7 +5486,7 @@ static int ufs_qcom_read_boot_config(struct platform_device *pdev)
 		return -EINVAL;
 
 	is_bootdevice_ufs = (*buf) >> 1 & 0x1f;
-	dev_err(&pdev->dev, "boot_config val = %x is_bootdevice_ufs = %x\n",
+	dev_dbg(&pdev->dev, "boot_config val = %x is_bootdevice_ufs = %x\n",
 			*buf, is_bootdevice_ufs);
 	kfree(buf);
 	nvmem_cell_put(cell);

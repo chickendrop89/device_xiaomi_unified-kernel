@@ -1,4 +1,2 @@
 mm/zsmalloc.ko
-drivers/soc/qcom/serial_num.ko
 drivers/block/zram/zram.ko
-drivers/cpufreq/cpumaxfreq.ko

@@ -1555,7 +1555,6 @@ static int nopmi_usb_get_prop(struct power_supply *psy,
 	return ret;
 }
 
-#ifdef CONFIG_TOUCHSCREEN_COMMON
 typedef struct touchscreen_usb_piugin_data{
 		bool valid;
 		bool usb_plugged_in;
@@ -1563,7 +1562,6 @@ typedef struct touchscreen_usb_piugin_data{
 		} touchscreen_usb_piugin_data_t;
 touchscreen_usb_piugin_data_t g_touchscreen_usb_pulgin = {0};
 EXPORT_SYMBOL(g_touchscreen_usb_pulgin);
-#endif
 
 static int nopmi_usb_set_prop(struct power_supply *psy,
 		enum power_supply_property psp,
@@ -1617,12 +1615,10 @@ static int nopmi_usb_set_prop(struct power_supply *psy,
 			/* longcheer nielianjie10 2022.10.13 add battery verify to limit charge current and modify battery verify logic end */
 			ret = 0;
 
-			#ifdef CONFIG_TOUCHSCREEN_COMMON
 				g_touchscreen_usb_pulgin.usb_plugged_in = nopmi_chg->usb_online;
 				if(g_touchscreen_usb_pulgin.valid){
 					g_touchscreen_usb_pulgin.event_callback();
 				}
-			#endif
 
 			break;
 		case POWER_SUPPLY_PROP_CHARGE_TERM_CURRENT:

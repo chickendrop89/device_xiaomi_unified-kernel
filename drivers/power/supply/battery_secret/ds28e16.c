@@ -94,9 +94,11 @@ static bool flag_battery_verify_process = false;
 
 struct mutex ds_cmd_lock; // cmd Lock  2022_4_19 updated
 
+u32 panel_info = 1;
+
 //longcheer nielianjie10 2022.10.13 battery verify to check lcd status
 #if IS_ENABLED(CONFIG_FACTORY_BUILD)
-extern u32 panel_info;
+EXPORT_SYMBOL(panel_info);
 #endif
 
 //longcheer nielianjie10 2022.11.05 Init onewire_gpio first,then init ds28e16

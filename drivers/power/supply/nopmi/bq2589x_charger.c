@@ -1089,7 +1089,7 @@ int main_get_charge_type(void)
 }
 EXPORT_SYMBOL_GPL(main_get_charge_type);
 
-#ifdef DEBUG
+#if IS_ENABLED(CONFIG_PD_DBG_INFO)
 static void bq2589x_dump_regs(struct bq2589x *bq)
 {
 	int addr, ret;
@@ -1981,7 +1981,7 @@ but ovp is very speed ,so this code not working */
                 }
         }
 #endif
-	#ifdef DEBUG
+	#if IS_ENABLED(CONFIG_PD_DBG_INFO)
 		bq2589x_dump_regs(bq);
 	#endif
 

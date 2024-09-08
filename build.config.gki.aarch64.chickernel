@@ -1,0 +1,6 @@
+. ${ROOT_DIR}/${KERNEL_DIR}/build.config.common
+. ${ROOT_DIR}/${KERNEL_DIR}/build.config.aarch64
+. ${ROOT_DIR}/${KERNEL_DIR}/build.config.gki
+. ${ROOT_DIR}/${KERNEL_DIR}/build.config.gki.aarch64
+
+DEFCONFIG=chickernel_defconfig

@@ -16,8 +16,8 @@
 
 #define BOEFFLA_WL_BLOCKER_VERSION	"1.1.0"
 
-#define LIST_WL_DEFAULT				"qcom_rx_wakelock"
+#define LIST_WL_DEFAULT				"qcom_rx_wakelock;4a8c000.qcom,qup_uart"
 
 #define LENGTH_LIST_WL				255
-#define LENGTH_LIST_WL_DEFAULT		16
+#define LENGTH_LIST_WL_DEFAULT		38
 #define LENGTH_LIST_WL_SEARCH		LENGTH_LIST_WL + LENGTH_LIST_WL_DEFAULT + 5

@@ -13,6 +13,10 @@ static const char *task_name[] = {
 	"surfaceflinger",
 	"cameraserver",
 	"ndroid.systemui",  // com.android.systemui
+	"droid.launcher3",	// com.android.launcher3
+	"s.nexuslauncher",	// com.google.android.apps.nexuslauncher
+	".globallauncher",	// com.mi.android.globallauncher
+	"coilsw.launcher"	// com.teslacoilsw.launcher
 };
 
 static const char *RenderThread = "RenderThread";

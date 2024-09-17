@@ -16,7 +16,8 @@ static const char *task_name[] = {
 	"droid.launcher3",	// com.android.launcher3
 	"s.nexuslauncher",	// com.google.android.apps.nexuslauncher
 	".globallauncher",	// com.mi.android.globallauncher
-	"coilsw.launcher"	// com.teslacoilsw.launcher
+	"coilsw.launcher",	// com.teslacoilsw.launcher
+	"android.webview"	// com.google.android.webview, com.android.webview
 };
 
 static const char *RenderThread = "RenderThread";

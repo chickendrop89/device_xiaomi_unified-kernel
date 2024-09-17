@@ -3591,6 +3591,9 @@ static char *custom_module_blacklist[] = {
 #if IS_BUILTIN(CONFIG_ZSMALLOC)
     "zsmalloc",
 #endif
+#if IS_BUILTIN(CONFIG_BINDER_PRIO)
+	"binder_prio",
+#endif
 	"cpufreq_ondemand",
 	"cpufreq_userspace"
 };

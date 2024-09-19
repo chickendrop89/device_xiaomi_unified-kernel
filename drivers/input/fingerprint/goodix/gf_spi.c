@@ -79,15 +79,15 @@
 #define PROC_NAME "hwinfo"
 static struct proc_dir_entry *proc_entry;
 static int SPIDEV_MAJOR;
-int fpsensor = 0;
-module_param_named(fpsensor, fpsensor, int, 0644);
+int goodix_fpsensor = 0;
+module_param_named(fpsensor, goodix_fpsensor, int, 0644);
 MODULE_PARM_DESC(fpsensor, "fingerprint ic vendor");
 static DECLARE_BITMAP(minors, N_SPI_MINORS);
 static LIST_HEAD(device_list);
 static DEFINE_MUTEX(device_list_lock);
 static struct wakeup_source *fp_wakelock;
 static struct gf_dev gf;
-//extern int fpsensor;
+//extern int goodix_fpsensor;
 /*
 char fp_info[32] = {0};
 static int __init fingerprint_info(char *str)
@@ -815,12 +815,12 @@ static int gf_probe(struct platform_device *pdev)
 	INIT_WORK(&gf_dev->work, notification_work);
 #endif
 	//p = strstr(fingerprint_sensor, "gdx");
-	if (fpsensor == 1) {
+	if (goodix_fpsensor == 1) {
   		pr_err("This is goodix fingerprint\n");
-          	pr_err("fpsensor is %d\n", fpsensor);
+          	pr_err("fpsensor is %d\n", goodix_fpsensor);
   	} else {
 		pr_err("gf_probe failed as goodix\n");
-          	pr_err("fpsensor is %d\n", fpsensor);
+          	pr_err("fpsensor is %d\n", goodix_fpsensor);
 		return -1;
 	}
 	//int rc = 0;
@@ -1014,9 +1014,9 @@ static int __init gf_init(void)
 	 * that will key udev/mdev to add/remove /dev nodes.  Last, register
 	 * the driver which manages those device numbers.
 	 */
-/*
-	if (fpsensor != 2) {
-		pr_err(" hml gf_init failed as fpsensor = %d(2=gdx)\n", fpsensor);
+	/*
+	if (goodix_fpsensor != 2) {
+		pr_err(" hml gf_init failed as fpsensor = %d(2=gdx)\n", goodix_fpsensor);
 		return -1;
 	}
 */

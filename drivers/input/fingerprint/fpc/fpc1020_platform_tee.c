@@ -60,11 +60,11 @@
 //extern char *saved_command_line;
 //EXPORT_SYMBOL(saved_command_line);
 static struct proc_dir_entry *proc_entry;
-//extern int fpsensor;
+//extern int fpc_fpsensor;
 //char fingerprintstr[30] = {0};
 
-int fpsensor = 0;
-module_param_named(fpsensor, fpsensor, int, 0644);
+int fpc_fpsensor = 0;
+module_param_named(fpsensor, fpc_fpsensor, int, 0644);
 MODULE_PARM_DESC(fpsensor, "fingerprint ic vendor");
 
 /*
@@ -703,12 +703,12 @@ static int fpc1020_probe(struct platform_device *pdev)
 	
 	//p = strstr(fingerprint_sensor, "fpc");
   	
-	if (fpsensor == 2) {
+	if (fpc_fpsensor == 2) {
   		pr_err("This is fpc fingerprint\n");
-		dev_err(dev, "fpsensor is %d\n", fpsensor);
+		dev_err(dev, "fpsensor is %d\n", fpc_fpsensor);
   	} else {
 		pr_err("fpc1020_probe failed as fpsensor\n");
-		dev_err(dev, "fpsensor is %d\n", fpsensor);
+		dev_err(dev, "fpsensor is %d\n", fpc_fpsensor);
 		return -1;
 	}
 	

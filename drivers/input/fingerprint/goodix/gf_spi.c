@@ -64,7 +64,7 @@
 #define VER_MINOR	2
 #define PATCH_LEVEL 1
 
-#define WAKELOCK_HOLD_TIME 2000	/* in ms */
+#define WAKELOCK_HOLD_TIME 1000	/* in ms */
 #define FP_UNLOCK_REJECTION_TIMEOUT (WAKELOCK_HOLD_TIME - 500)
 
 #define GF_SPIDEV_NAME	   "goodix,fingerprint"

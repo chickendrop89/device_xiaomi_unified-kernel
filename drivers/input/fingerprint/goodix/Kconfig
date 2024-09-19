@@ -7,3 +7,10 @@ config FINGERPRINT_GOODIX_FOD
 	  If unsure, say Y.
 
 	  To compile this driver as a module, choose M here.
+
+config FINGERPRINT_FP_VREG_CONTROL
+	bool "Goodix fp_vdd_reg regulator control"
+	depends on FINGERPRINT_GOODIX_FOD
+	default n
+	help
+	  Say Y here to enable fp_vdd_vreg regulator by device driver

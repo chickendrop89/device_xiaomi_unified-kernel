@@ -1,4 +1,9 @@
 config FINGERPRINT_FPC1020
-        tristate "fpc fpc1020 fingerprint drvier support"
-        help
-          say y here to enable fpc fingerprint driver support!
+    tristate "FPC 1020 fingerprint support"
+    depends on INPUT_FINGERPRINT
+    help
+      say Y here to enable support for FPC fingerprint sensor.
+      
+      If unsure, say Y.
+      
+      To compile this driver as a module, choose M here.

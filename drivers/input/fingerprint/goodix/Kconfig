@@ -1,10 +1,9 @@
 config FINGERPRINT_GOODIX_FOD
-	tristate "Finger print card goodix fod"
+	tristate "Goodix (FOD) fingerprint support"
 	depends on INPUT_FINGERPRINT
 	help
-	  Say Y here to enable support for retrieving self-test reports.
+	  Say Y here to enable support for a goodix fingerprint sensor.
 
-	  If unsure, say N.
+	  If unsure, say Y.
 
 	  To compile this driver as a module, choose M here.
-

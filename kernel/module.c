@@ -3586,13 +3586,19 @@ int __weak module_frob_arch_sections(Elf_Ehdr *hdr,
 static char *module_blacklist;
 static char *custom_module_blacklist[] = {
 #if IS_BUILTIN(CONFIG_ZRAM)
-    "zram",
+	"zram",
 #endif
 #if IS_BUILTIN(CONFIG_ZSMALLOC)
-    "zsmalloc",
+	"zsmalloc",
 #endif
 #if IS_BUILTIN(CONFIG_BINDER_PRIO)
 	"binder_prio",
+#endif
+#if IS_BUILTIN(CONFIG_FINGERPRINT_FPC1020)
+	"fpc1020_platform_tee",
+#endif
+#if IS_BUILTIN(CONFIG_FINGERPRINT_GOODIX_FOD)
+	"goodix_fp",
 #endif
 	"cpufreq_ondemand",
 	"cpufreq_userspace"

@@ -1,0 +1,21 @@
+. ${ROOT_DIR}/${KERNEL_DIR}/build.config.common
+. ${ROOT_DIR}/${KERNEL_DIR}/build.config.aarch64
+. ${ROOT_DIR}/${KERNEL_DIR}/build.config.gki
+. ${ROOT_DIR}/${KERNEL_DIR}/build.config.gki.aarch64
+
+# Configuration path
+DEFCONFIG_PATH=${ROOT_DIR}/${KERNEL_DIR}/arch/arm64/configs
+
+DEFCONFIG=chickernel_defconfig
+FRAGMENT_CONFIG=${DEFCONFIG_PATH}/chickernel-variants/ksu.config
+
+PRE_DEFCONFIG_CMDS="
+cp ${DEFCONFIG_PATH}/${DEFCONFIG} ${DEFCONFIG_PATH}/.tmp.${DEFCONFIG}; \
+KCONFIG_CONFIG=${DEFCONFIG_PATH}/${DEFCONFIG} ${ROOT_DIR}/${KERNEL_DIR}/scripts/kconfig/merge_config.sh -m -r \
+${DEFCONFIG_PATH}/${DEFCONFIG} \ 
+${FRAGMENT_CONFIG}
+"
+
+POST_DEFCONFIG_CMDS="
+mv ${DEFCONFIG_PATH}/.tmp.${DEFCONFIG} ${DEFCONFIG_PATH}/${DEFCONFIG}
+"

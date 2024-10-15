@@ -1797,6 +1797,11 @@ int generic_update_time(struct inode *inode, struct timespec64 *time, int flags)
 {
 	int dirty_flags = 0;
 
+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+	if (unlikely(inode->i_state & 67108864)) {
+		return 0;
+	}
+#endif
 	if (flags & (S_ATIME | S_CTIME | S_MTIME)) {
 		if (flags & S_ATIME)
 			inode->i_atime = *time;
@@ -1825,6 +1830,11 @@ EXPORT_SYMBOL(generic_update_time);
  */
 int inode_update_time(struct inode *inode, struct timespec64 *time, int flags)
 {
+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+	if (unlikely(inode->i_state & 67108864)) {
+		return 0;
+	}
+#endif
 	if (inode->i_op->update_time)
 		return inode->i_op->update_time(inode, time, flags);
 	return generic_update_time(inode, time, flags);

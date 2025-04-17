@@ -26,7 +26,7 @@ on:
       build_configs:
         description: 'Space-separated list of build configurations'
         required: true
-        default: 'build.config.gki.aarch64.chickernel.ksu.susfs'
+        default: 'build.config.gki.aarch64.chickernel.ksun.susfs'
         type: string
 
 jobs:

@@ -6,7 +6,7 @@ on:
       manifest_url:
         description: 'A manifest URL'
         required: true
-        default: 'https://raw.githubusercontent.com/chickendrop89/device_xiaomi_unified-kernel/readme/chickernel.xml'
+        default: 'https://raw.githubusercontent.com/dxcvvxd/device_xiaomi_unified-kernel/refs/heads/readme/chickernel.xml'
         type: string
       anykernel_url:
         description: 'AnyKernel3 fork URL'

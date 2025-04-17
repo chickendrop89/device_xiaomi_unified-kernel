@@ -11,7 +11,7 @@ on:
       anykernel_url:
         description: 'AnyKernel3 fork URL'
         required: true
-        default: 'https://github.com/osm0sis/AnyKernel3'
+        default: 'https://github.com/dxcvvxd/AnyKernel3'
         type: string
       fast_build:
         description: 'Instruct tools to perform a fast Build'

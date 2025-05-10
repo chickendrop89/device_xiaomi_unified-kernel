@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022, 2025 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/delay.h>
@@ -107,6 +107,9 @@ int smblite_iio_get_prop(struct smb_charger *chg, int channel, int *val)
 		break;
 	case PSY_IIO_DIE_HEALTH:
 		rc = smblite_lib_get_die_health(chg, val);
+		break;
+	case PSY_IIO_TYPEC_ACCESSORY_MODE:
+		rc = smblite_lib_get_usb_prop_typec_accessory_mode(chg, val);
 		break;
 	default:
 		pr_debug("get prop %x is not supported\n", channel);

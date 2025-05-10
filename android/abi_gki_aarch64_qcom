@@ -21,7 +21,6 @@
   __alloc_percpu
   __alloc_skb
   alloc_skb_with_frags
-  alloc_swapdev_block
   alloc_workqueue
   amba_bustype
   amba_driver_register
@@ -1733,6 +1732,7 @@
   proto_unregister
   __pskb_pull_tail
   ___pskb_trim
+  __pskb_copy_fclone
   ptp_clock_event
   ptp_clock_index
   ptp_clock_register
@@ -2076,7 +2076,6 @@
   smp_call_function
   smp_call_function_single
   smp_call_function_single_async
-  snapshot_get_image_size
   snd_info_create_module_entry
   snd_info_free_entry
   snd_info_register
@@ -2784,3 +2783,5 @@
   xsk_tx_release
   xsk_uses_need_wakeup
   zap_vma_ptes
+  #alloc_swapdev_block
+  #snapshot_get_image_size

@@ -740,9 +740,6 @@
   wake_up_bit
 
 # required by btusb.ko
-  btbcm_set_bdaddr
-  btbcm_setup_apple
-  btbcm_setup_patchram
   device_set_wakeup_capable
   disable_irq
   disable_irq_nosync
@@ -771,6 +768,9 @@
   usb_queue_reset_device
   usb_scuttle_anchored_urbs
   usb_set_interface
+# btbcm_set_bdaddr
+# btbcm_setup_apple
+# btbcm_setup_patchram
 
 # required by hci_vhci.ko
   _copy_from_iter

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023, 2025, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #define pr_fmt(fmt) "clk: %s: " fmt, __func__
@@ -225,11 +225,13 @@ static const char *const gcc_debug_mux_parent_names[] = {
 	"gcc_vs_ctrl_clk",
 	"gcc_wcss_vs_clk",
 	"gpu_cc_debug_mux",
+	"lpass_aon_cc_debug_mux",
 	"measure_only_cnoc_clk",
 	"measure_only_gcc_camera_xo_clk",
 	"measure_only_gcc_cpuss_gnoc_clk",
 	"measure_only_gcc_disp_xo_clk",
 	"measure_only_gcc_gpu_cfg_ahb_clk",
+	"measure_only_gcc_lpass_sway_clk",
 	"measure_only_ipa_2x_clk",
 	"mc_cc_debug_mux",
 	"measure_only_snoc_clk",
@@ -349,11 +351,13 @@ static int gcc_debug_mux_sels[] = {
 	0xC7,		/* gcc_vs_ctrl_clk */
 	0xCB,		/* gcc_wcss_vs_clk */
 	0xED,		/* gpu_cc_debug_mux */
+	0xFF,		/* lpass_aon_cc_debug_mux */
 	0x1C,		/* measure_only_cnoc_clk */
 	0x42,		/* measure_only_gcc_camera_xo_clk */
 	0xB1,		/* measure_only_gcc_cpuss_gnoc_clk */
 	0x43,		/* measure_only_gcc_disp_xo_clk */
 	0xEB,		/* measure_only_gcc_gpu_cfg_ahb_clk */
+	0xFD,		/* measure_only_gcc_lpass_sway_clk */
 	0xCD,		/* measure_only_ipa_2x_clk */
 	0xA5,		/* mc_cc_debug_mux or ddrss_gcc_debug_clk */
 	0x7,		/* measure_only_snoc_clk */
@@ -433,6 +437,154 @@ static struct clk_debug_mux gpu_cc_debug_mux = {
 	},
 };
 
+static const char *const lpass_aon_cc_debug_mux_parent_names[] = {
+	"lpass_aon_cc_ahb_timeout_clk",
+	"lpass_aon_cc_aon_h_clk",
+	"lpass_aon_cc_bus_alt_clk",
+	"lpass_aon_cc_csr_h_clk",
+	"lpass_aon_cc_mcc_access_clk",
+	"lpass_aon_cc_pdc_h_clk",
+	"lpass_aon_cc_q6_atbm_clk",
+	"lpass_aon_cc_q6_debug_mux",
+	"lpass_aon_cc_qsm_xo_clk",
+	"lpass_aon_cc_rsc_hclk_clk",
+	"lpass_aon_cc_sleep_clk",
+	"lpass_aon_cc_ssc_h_clk",
+	"lpass_aon_cc_tx_mclk_2x_clk",
+	"lpass_aon_cc_tx_mclk_clk",
+	"lpass_aon_cc_va_2x_clk",
+	"lpass_aon_cc_va_clk",
+	"lpass_aon_cc_va_mem0_clk",
+	"lpass_aon_cc_va_xpu2_client_clk",
+	"lpass_aon_cc_vs_vddcx_clk",
+	"lpass_aon_cc_vs_vddmx_clk",
+	"lpass_audio_cc_debug_mux",
+	"scc_debug_mux",
+};
+
+static int lpass_aon_cc_debug_mux_sels[] = {
+	0x14,		/* lpass_aon_cc_ahb_timeout_clk */
+	0x2,		/* lpass_aon_cc_aon_h_clk */
+	0xD,		/* lpass_aon_cc_bus_alt_clk */
+	0x5,		/* lpass_aon_cc_csr_h_clk */
+	0x24,		/* lpass_aon_cc_mcc_access_clk */
+	0x2F,		/* lpass_aon_cc_pdc_h_clk */
+	0x18,		/* lpass_aon_cc_q6_atbm_clk */
+	0x1E,		/* lpass_aon_cc_q6_debug_mux */
+	0xF,		/* lpass_aon_cc_qsm_xo_clk */
+	0x21,		/* lpass_aon_cc_rsc_hclk_clk */
+	0x2E,		/* lpass_aon_cc_sleep_clk */
+	0x13,		/* lpass_aon_cc_ssc_h_clk */
+	0x4,		/* lpass_aon_cc_tx_mclk_2x_clk */
+	0x3,		/* lpass_aon_cc_tx_mclk_clk */
+	0xE,		/* lpass_aon_cc_va_2x_clk */
+	0x9,		/* lpass_aon_cc_va_clk */
+	0x12,		/* lpass_aon_cc_va_mem0_clk */
+	0x6,		/* lpass_aon_cc_va_xpu2_client_clk */
+	0x23,		/* lpass_aon_cc_vs_vddcx_clk */
+	0x22,		/* lpass_aon_cc_vs_vddmx_clk */
+	0x3F,		/* lpass_audio_cc_debug_mux */
+	0x3E,		/* scc_debug_mux */
+};
+
+static struct clk_debug_mux lpass_aon_cc_debug_mux = {
+	.priv = &debug_mux_priv,
+	.debug_offset = 0x5C,
+	.post_div_offset = U32_MAX,
+	.cbcr_offset = 0xA084,
+	.src_sel_mask = 0x7E,
+	.src_sel_shift = 1,
+	.post_div_mask = 0x1,
+	.post_div_shift = 0,
+	.post_div_val = 1,
+	.mux_sels = lpass_aon_cc_debug_mux_sels,
+	.num_mux_sels = ARRAY_SIZE(lpass_aon_cc_debug_mux_sels),
+	.hw.init = &(const struct clk_init_data){
+		.name = "lpass_aon_cc_debug_mux",
+		.ops = &clk_debug_mux_ops,
+		.parent_names = lpass_aon_cc_debug_mux_parent_names,
+		.num_parents = ARRAY_SIZE(lpass_aon_cc_debug_mux_parent_names),
+	},
+};
+
+static const char *const lpass_audio_cc_debug_mux_parent_names[] = {
+	"lpass_audio_cc_aud_slimbus_clk",
+	"lpass_audio_cc_aud_slimbus_core_clk",
+	"lpass_audio_cc_aud_slimbus_npl_clk",
+	"lpass_audio_cc_bus_clk",
+	"lpass_audio_cc_bus_timeout_clk",
+	"lpass_audio_cc_codec_mem0_clk",
+	"lpass_audio_cc_codec_mem1_clk",
+	"lpass_audio_cc_codec_mem2_clk",
+	"lpass_audio_cc_codec_mem3_clk",
+	"lpass_audio_cc_codec_mem_clk",
+	"lpass_audio_cc_ext_if1_ebit_clk",
+	"lpass_audio_cc_ext_if1_ibit_clk",
+	"lpass_audio_cc_ext_if2_ebit_clk",
+	"lpass_audio_cc_ext_if2_ibit_clk",
+	"lpass_audio_cc_ext_if3_ebit_clk",
+	"lpass_audio_cc_ext_if3_ibit_clk",
+	"lpass_audio_cc_ext_if4_ebit_clk",
+	"lpass_audio_cc_ext_if4_ibit_clk",
+	"lpass_audio_cc_ext_mclk0_clk",
+	"lpass_audio_cc_ext_mclk1_clk",
+	"lpass_audio_cc_lpaif_pcmoe_clk",
+	"lpass_audio_cc_rx_mclk_2x_clk",
+	"lpass_audio_cc_rx_mclk_clk",
+	"lpass_audio_cc_sampling_clk",
+	"lpass_audio_cc_wsa_mclk_2x_clk",
+	"lpass_audio_cc_wsa_mclk_clk",
+};
+
+static int lpass_audio_cc_debug_mux_sels[] = {
+	0x32,		/* lpass_audio_cc_aud_slimbus_clk */
+	0x2,		/* lpass_audio_cc_aud_slimbus_core_clk */
+	0x3F,		/* lpass_audio_cc_aud_slimbus_npl_clk */
+	0x1,		/* lpass_audio_cc_bus_clk */
+	0x7,		/* lpass_audio_cc_bus_timeout_clk */
+	0x3,		/* lpass_audio_cc_codec_mem0_clk */
+	0x4,		/* lpass_audio_cc_codec_mem1_clk */
+	0x5,		/* lpass_audio_cc_codec_mem2_clk */
+	0x6,		/* lpass_audio_cc_codec_mem3_clk */
+	0x0,		/* lpass_audio_cc_codec_mem_clk */
+	0x9,		/* lpass_audio_cc_ext_if1_ebit_clk */
+	0x8,		/* lpass_audio_cc_ext_if1_ibit_clk */
+	0xB,		/* lpass_audio_cc_ext_if2_ebit_clk */
+	0xA,		/* lpass_audio_cc_ext_if2_ibit_clk */
+	0xD,		/* lpass_audio_cc_ext_if3_ebit_clk */
+	0xC,		/* lpass_audio_cc_ext_if3_ibit_clk */
+	0x19,		/* lpass_audio_cc_ext_if4_ebit_clk */
+	0x18,		/* lpass_audio_cc_ext_if4_ibit_clk */
+	0xE,		/* lpass_audio_cc_ext_mclk0_clk */
+	0xF,		/* lpass_audio_cc_ext_mclk1_clk */
+	0x16,		/* lpass_audio_cc_lpaif_pcmoe_clk */
+	0x14,		/* lpass_audio_cc_rx_mclk_2x_clk */
+	0x15,		/* lpass_audio_cc_rx_mclk_clk */
+	0x17,		/* lpass_audio_cc_sampling_clk */
+	0x10,		/* lpass_audio_cc_wsa_mclk_2x_clk */
+	0x11,		/* lpass_audio_cc_wsa_mclk_clk */
+};
+
+static struct clk_debug_mux lpass_audio_cc_debug_mux = {
+	.priv = &debug_mux_priv,
+	.debug_offset = 0x2F000,
+	.post_div_offset = U32_MAX,
+	.cbcr_offset = 0x2D004,
+	.src_sel_mask = 0x3F,
+	.src_sel_shift = 0,
+	.post_div_mask = 0x1,
+	.post_div_shift = 0,
+	.post_div_val = 1,
+	.mux_sels = lpass_audio_cc_debug_mux_sels,
+	.num_mux_sels = ARRAY_SIZE(lpass_audio_cc_debug_mux_sels),
+	.hw.init = &(const struct clk_init_data){
+		.name = "lpass_audio_cc_debug_mux",
+		.ops = &clk_debug_mux_ops,
+		.parent_names = lpass_audio_cc_debug_mux_parent_names,
+		.num_parents = ARRAY_SIZE(lpass_audio_cc_debug_mux_parent_names),
+	},
+};
+
 static const char *const mc_cc_debug_mux_parent_names[] = {
 	"measure_only_mccc_clk",
 };
@@ -448,6 +600,8 @@ static struct clk_debug_mux mc_cc_debug_mux = {
 };
 
 static struct mux_regmap_names mux_list[] = {
+	{ .mux = &lpass_audio_cc_debug_mux, .regmap_name = "qcom,lpassaudiocc" },
+	{ .mux = &lpass_aon_cc_debug_mux, .regmap_name = "qcom,lpassaoncc" },
 	{ .mux = &apss_cc_debug_mux, .regmap_name = "qcom,apsscc" },
 	{ .mux = &disp_cc_debug_mux, .regmap_name = "qcom,dispcc" },
 	{ .mux = &gpu_cc_debug_mux, .regmap_name = "qcom,gpucc" },
@@ -507,6 +661,14 @@ static struct clk_dummy measure_only_gcc_gpu_cfg_ahb_clk = {
 	.rrate = 1000,
 	.hw.init = &(const struct clk_init_data){
 		.name = "measure_only_gcc_gpu_cfg_ahb_clk",
+		.ops = &clk_dummy_ops,
+	},
+};
+
+static struct clk_dummy measure_only_gcc_lpass_sway_clk = {
+	.rrate = 1000,
+	.hw.init = &(const struct clk_init_data){
+		.name = "measure_only_gcc_lpass_sway_clk",
 		.ops = &clk_dummy_ops,
 	},
 };
@@ -575,6 +737,7 @@ static struct clk_hw *debugcc_khaje_hws[] = {
 	&measure_only_gcc_cpuss_gnoc_clk.hw,
 	&measure_only_gcc_disp_xo_clk.hw,
 	&measure_only_gcc_gpu_cfg_ahb_clk.hw,
+	&measure_only_gcc_lpass_sway_clk.hw,
 	&measure_only_gpu_cc_gx_cxo_clk.hw,
 	&measure_only_ipa_2x_clk.hw,
 	&measure_only_mccc_clk.hw,
@@ -601,6 +764,10 @@ static int clk_debug_khaje_probe(struct platform_device *pdev)
 	BUILD_BUG_ON(ARRAY_SIZE(gcc_debug_mux_parent_names) != ARRAY_SIZE(gcc_debug_mux_sels));
 	BUILD_BUG_ON(ARRAY_SIZE(gpu_cc_debug_mux_parent_names) !=
 		ARRAY_SIZE(gpu_cc_debug_mux_sels));
+	BUILD_BUG_ON(ARRAY_SIZE(lpass_aon_cc_debug_mux_parent_names) !=
+		ARRAY_SIZE(lpass_aon_cc_debug_mux_sels));
+	BUILD_BUG_ON(ARRAY_SIZE(lpass_audio_cc_debug_mux_parent_names) !=
+		ARRAY_SIZE(lpass_audio_cc_debug_mux_sels));
 
 	clk = devm_clk_get(&pdev->dev, "xo_clk_src");
 	if (IS_ERR(clk)) {

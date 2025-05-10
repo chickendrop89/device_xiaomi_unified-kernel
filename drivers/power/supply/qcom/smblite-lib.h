@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2020-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023, 2025 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef __SMBLITE_LIB_H
@@ -486,6 +486,8 @@ int smblite_lib_get_prop_input_current_limited(struct smb_charger *chg,
 int smblite_lib_get_prop_usb_voltage_now(struct smb_charger *chg,
 				union power_supply_propval *val);
 int smblite_lib_get_usb_prop_typec_mode(struct smb_charger *chg,
+				int *val);
+int smblite_lib_get_usb_prop_typec_accessory_mode(struct smb_charger *chg,
 				int *val);
 int smblite_lib_get_prop_typec_cc_orientation(struct smb_charger *chg,
 				int *val);

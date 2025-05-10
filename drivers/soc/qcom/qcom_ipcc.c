@@ -64,6 +64,8 @@ struct ipcc_mbox_chan {
 	u16 is_signal_enabled;
 };
 
+static bool is_hibernation;
+
 static inline u32 qcom_ipcc_get_packed_id(u16 client_id, u16 signal_id)
 {
 	return (client_id << IPCC_CLIENT_ID_SHIFT) | signal_id;
@@ -377,7 +379,7 @@ static int qcom_ipcc_pm_resume(struct device *dev)
 	u32 packed_id;
 	struct ipcc_protocol_data *proto_data = dev_get_drvdata(dev);
 
-	if (pm_suspend_via_firmware()) {
+	if (pm_suspend_via_firmware() || is_hibernation) {
 		qcom_ipcc_restore_unmask_irq(dev);
 		return 0;
 	}
@@ -403,6 +405,26 @@ static int qcom_ipcc_pm_resume(struct device *dev)
 #define qcom_ipcc_pm_suspend NULL
 #define qcom_ipcc_pm_resume NULL
 #endif
+
+static int ipcc_hibernation_pm_notifier(struct notifier_block *nb,
+			unsigned long event, void *unused)
+{
+	switch (event) {
+	case PM_HIBERNATION_PREPARE:
+		is_hibernation = true;
+		break;
+	case PM_POST_HIBERNATION:
+		is_hibernation = false;
+		break;
+	default:
+		break;
+	}
+	return NOTIFY_DONE;
+}
+
+static struct notifier_block hibernate_pm_nb = {
+	.notifier_call = ipcc_hibernation_pm_notifier,
+};
 
 static int qcom_ipcc_probe(struct platform_device *pdev)
 {
@@ -463,6 +485,13 @@ static int qcom_ipcc_probe(struct platform_device *pdev)
 	}
 
 	platform_set_drvdata(pdev, proto_data);
+
+	ret = register_pm_notifier(&hibernate_pm_nb);
+	if (ret) {
+		dev_err(&pdev->dev, "Failed to register notifier: %d\n", ret);
+		return ret;
+	}
+	is_hibernation = false;
 
 	return 0;
 

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2022, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022, 2025, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef _DT_BINDINGS_CLK_QCOM_GCC_KHAJE_H
@@ -186,6 +186,7 @@
 #define GPLL9							176
 #define GPLL9_OUT_MAIN						177
 #define GCC_DISP_GPLL0_CLK_SRC					178
+#define GCC_LPASS_SWAY_CLK					179
 
 /* GCC resets */
 #define GCC_QUSB2PHY_PRIM_BCR					0

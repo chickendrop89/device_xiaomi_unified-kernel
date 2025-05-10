@@ -14,6 +14,10 @@
  * General Public License for more details.
  */
 
+/*
+ * Copyright (c) 2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ */
+
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/slab.h>
@@ -293,6 +297,9 @@ struct TAS5805m_priv {
 
 	int init_done;
 	int hs_state;
+
+	int mute;
+	bool prepare_in_dai;
 };
 
 const struct regmap_config TAS5805m_regmap = {
@@ -483,6 +490,36 @@ static int TAS5805m_put_volsw(struct snd_kcontrol *kcontrol,
 	return ret;
 }
 
+static int TAS5805m_get_mute(struct snd_kcontrol *kcontrol,
+			     struct snd_ctl_elem_value *uinfo)
+{
+	struct snd_soc_component *component =
+		snd_soc_kcontrol_component(kcontrol);
+	struct TAS5805m_priv *priv = snd_soc_component_get_drvdata(component);
+
+	if (priv->init_done) {
+		mutex_lock(&priv->lock);
+		mutex_unlock(&priv->lock);
+	}
+	return 0;
+}
+
+static int TAS5805m_put_mute(struct snd_kcontrol *kcontrol,
+			     struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_component *component =
+		snd_soc_kcontrol_component(kcontrol);
+	struct TAS5805m_priv *priv = snd_soc_component_get_drvdata(component);
+
+	if (priv->init_done) {
+		mutex_lock(&priv->lock);
+		priv->mute = ucontrol->value.integer.value[0];
+		tas5805m_i2c_mute(priv->client, priv->mute);
+		mutex_unlock(&priv->lock);
+	}
+	return 0;
+}
+
 static DECLARE_TLV_DB_SCALE(TAS5805m_digital_tlv, -10350, 50, 1 /* mute */);
 
 static const struct snd_kcontrol_new TAS5805m_snd_controls[] = {
@@ -499,8 +536,32 @@ static const struct snd_kcontrol_new TAS5805m_snd_controls[] = {
 			TAS5805m_digital_tlv)
 };
 
+static const struct snd_kcontrol_new TAS5805m_snd_mute[] = {
+	{
+		.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
+		.name  = "speaker mute",
+		.info  = TAS5805m_vol_info,
+		.get   = TAS5805m_get_mute,
+		.put   = TAS5805m_put_mute,
+	},
+};
+
 static int TAS5805m_snd_probe(struct snd_soc_component *component)
 {
+	int ret = 0;
+	struct TAS5805m_priv *priv = snd_soc_component_get_drvdata(component);
+	struct device *dev = &priv->client->dev;
+
+	dev_err(dev, "snd_probe\n");
+
+	ret = snd_soc_add_component_controls(component, TAS5805m_snd_controls, 1);
+	if (ret != 0)
+		dev_err(dev, "%s fail add controls, error: %d\n", __func__, ret);
+
+	ret = snd_soc_add_component_controls(component, TAS5805m_snd_mute, 1);
+	if (ret != 0)
+		dev_err(dev, "%s fail add mute ctl, error: %d\n", __func__, ret);
+
 	return 0;
 }
 
@@ -639,8 +700,23 @@ static void tas5805m_priv_init(struct TAS5805m_priv *priv)
 	}
 }
 
+static int TAS5805m_prepare(struct snd_pcm_substream *substream,
+	struct snd_soc_dai *dai)
+{
+	struct TAS5805m_priv *priv = snd_soc_component_get_drvdata(dai->component);
+	(void)substream;
+
+	if (!priv->init_done && priv->prepare_in_dai) {
+		dev_err(&priv->client->dev, "prepare_in_dai\n");
+		tas5805m_priv_init(priv);
+	}
+
+	return 0;
+}
+
 static const struct snd_soc_dai_ops TAS5805m_dai_ops = {
 	.mute_stream = TAS5805m_mute,
+	.prepare = TAS5805m_prepare,
 };
 
 static struct snd_soc_dai_driver TAS5805m_dai = {
@@ -709,11 +785,15 @@ static int TAS5805m_probe(struct i2c_client *client, struct regmap *regmap)
 	/* pull /PDN high */
 	gpio_set_value(priv->pdn_gpio, 1);
 
-	priv->init_done = 0;
-	tas5805m_priv_init(priv);
-	if (priv->init_done == 0) {
-		dev_err(dev, "Failed to initialize the tas5805 device!\n");
-		goto config_err;
+	priv->prepare_in_dai = of_property_read_bool(np, "prepare-in-dai");
+	dev_err(dev, "prepare_in_dai = %d\n", priv->prepare_in_dai);
+	if (!priv->prepare_in_dai) {
+		priv->init_done = 0;
+		tas5805m_priv_init(priv);
+		if (priv->init_done == 0) {
+			dev_err(dev, "Failed to initialize the tas5805 device!\n");
+			goto config_err;
+		}
 	}
 
 	mutex_init(&priv->lock);

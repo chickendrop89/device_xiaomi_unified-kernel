@@ -529,7 +529,7 @@ void geni_se_dump_dbg_regs(struct uart_port *uport)
 	u32 se_geni_general_cfg, m_cmd_err, m_fw_err, rx_len_in, m_gp_length;
 	u32 s_gp_length, dma_tx_ptr_l, dma_tx_ptr_h, dma_tx_attr;
 	u32 dma_tx_max_burst_size, dma_rx_ptr_l, dma_rx_ptr_h, dma_rx_attr;
-	u32 dma_rx_max_burst_size, dma_if_en, geni_clk_ctrl, fifo_if_disable;
+	u32 dma_rx_max_burst_size, dma_if_en, geni_clk_ctrl_ro, fifo_if_disable_ro;
 
 	struct msm_geni_serial_port *port = GET_DEV_PORT(uport);
 	void __iomem *base = uport->membase;
@@ -593,8 +593,8 @@ void geni_se_dump_dbg_regs(struct uart_port *uport)
 	dma_rx_attr = geni_read_reg(base, SE_DMA_RX_ATTR);
 	dma_rx_max_burst_size = geni_read_reg(base, SE_DMA_RX_MAX_BURST);
 	dma_if_en = geni_read_reg(base, SE_DMA_IF_EN);
-	geni_clk_ctrl = geni_read_reg(base, SE_GENI_CLK_CTRL);
-	fifo_if_disable = geni_read_reg(base, SE_FIFO_IF_DISABLE);
+	geni_clk_ctrl_ro = geni_read_reg(base, GENI_CLK_CTRL_RO);
+	fifo_if_disable_ro = geni_read_reg(base, GENI_IF_DISABLE_RO);
 
 	UART_LOG_DBG(port->ipc_log_misc, uport->dev,
 		     "%s: m_cmd0:0x%x, m_irq_status:0x%x, geni_status:0x%x, geni_ios:0x%x\n",
@@ -637,7 +637,7 @@ void geni_se_dump_dbg_regs(struct uart_port *uport)
 		     dma_rx_ptr_l, dma_rx_ptr_h, dma_rx_attr, dma_rx_max_burst_size);
 	UART_LOG_DBG(port->ipc_log_misc, uport->dev,
 		     "dma_if_en:0x%x, geni_clk_ctrl:0x%x fifo_if_disable:0x%x\n",
-		     dma_if_en, geni_clk_ctrl, fifo_if_disable);
+		     dma_if_en, geni_clk_ctrl_ro, fifo_if_disable_ro);
 }
 
 int msm_geni_serial_resources_on(struct msm_geni_serial_port *port)

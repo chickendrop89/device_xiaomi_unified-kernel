@@ -2142,6 +2142,44 @@ static u16 printk_sprint(char *text, u16 size, int facility,
 	return text_len;
 }
 
+__maybe_unused static bool should_filter_vendor_message(const char *text) 
+{
+    const char *const *module;
+
+	/* 
+	 * The fmt string in question needs to be truncated to 5
+	 * characters due to the prefix_buf buffer being 8 bytes 
+	 */
+	static const char *const filtered_modules[] = {
+        #if !IS_ENABLED(CONFIG_POWER_SUPPLY_DEBUG)
+            "[bq25", /* [bq2589x] */
+            "[sm56", /* [sm5602]  */
+            "nopmi", /* nopmi_chg */
+            "[sc85", /* [sc8551-STANDALONE]*/
+        #endif
+            "st21n", /* st21nfc  */
+            "[Awin", /* [Awinic] */
+            NULL
+    };
+
+    for (module = filtered_modules; likely(*module); module++) {
+        /* 
+         * The PSU logs are the largest, and most repeated portion 
+         * of what is printed in the console most of the time. 
+         * Adjust branch perdiction accordingly  
+         */
+        #if !IS_ENABLED(CONFIG_POWER_SUPPLY_DEBUG)
+            if (likely(strstr(text, *module)))
+                return true;
+        #else
+            if (unlikely(strstr(text, *module)))
+                return true;
+        #endif
+    }
+    
+    return false;
+}
+
 __printf(4, 0)
 int vprintk_store(int facility, int level,
 		  const struct dev_printk_info *dev_info,
@@ -2181,6 +2219,18 @@ int vprintk_store(int facility, int level,
 	va_copy(args2, args);
 	reserve_size = vsnprintf(&prefix_buf[0], sizeof(prefix_buf), fmt, args2) + 1;
 	va_end(args2);
+
+	/* 
+	 * Some vendor GKI modules were built with debugging compiled in, 
+	 * this spams the console with info we won't need and covers up 
+	 * important logs
+	 */
+	#if IS_ENABLED(CONFIG_SUPPRESS_VENDOR_MODULE_DEBUGGING)
+        if (should_filter_vendor_message(prefix_buf)) {
+           ret = 0;
+           goto out;
+        }
+	#endif
 
 	if (reserve_size > LOG_LINE_MAX)
 		reserve_size = LOG_LINE_MAX;

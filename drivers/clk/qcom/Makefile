@@ -127,6 +127,7 @@ obj-$(CONFIG_SM_GCC_6125) += gcc-sm6125.o
 obj-$(CONFIG_SM_GCC_6350) += gcc-sm6350.o
 obj-$(CONFIG_SM_DISPCC_SCUBA) += dispcc-scuba.o
 obj-$(CONFIG_SM_LPASS_AUDIOCC_SCUBA) += lpassaoncc-scuba.o lpassaudiocc-scuba.o
+obj-$(CONFIG_SM_LPASS_AUDIOCC_KHAJE) += lpassaoncc-khaje.o lpassaudiocc-khaje.o
 obj-$(CONFIG_SM_DEBUGCC_SCUBA) += debugcc-scuba.o
 obj-$(CONFIG_SM_GCC_8150) += gcc-sm8150.o
 obj-$(CONFIG_SM_GCC_8250) += gcc-sm8250.o

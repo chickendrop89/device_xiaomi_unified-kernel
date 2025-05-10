@@ -1,6 +1,6 @@
 #
-# Automatically generated file; DO NOT EDIT.
-# Linux/arm64 5.15.148 Kernel Configuration
+# WARNING:
+# THIS IS NOT THE REAL CHICKERNEL CONFIGURATION!
 #
 CONFIG_CC_VERSION_TEXT="Android (12085363, +pgo, +bolt, +lto, +mlgo, based on r530567) clang version 19.0.0 (https://android.googlesource.com/toolchain/llvm-project 97a699bf4812a18fb657c2779f5296a4ab2694d2)"
 CONFIG_GCC_VERSION=0

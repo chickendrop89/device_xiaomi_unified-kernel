@@ -326,6 +326,7 @@ snd-soc-tas2552-objs := tas2552.o
 snd-soc-tas2562-objs := tas2562.o
 snd-soc-tas2764-objs := tas2764.o
 snd-soc-tas5805m-objs := tas5805m.o
+snd-soc-add2010-objs := add2010.o
 # Mux
 snd-soc-simple-mux-objs := simple-mux.o
 
@@ -660,6 +661,7 @@ obj-$(CONFIG_SND_SOC_LPASS_VA_MACRO)	+= snd-soc-lpass-va-macro.o
 obj-$(CONFIG_SND_SOC_LPASS_RX_MACRO)	+= snd-soc-lpass-rx-macro.o
 obj-$(CONFIG_SND_SOC_LPASS_TX_MACRO)	+= snd-soc-lpass-tx-macro.o
 obj-$(CONFIG_SND_SOC_TAS5805M) += snd-soc-tas5805m.o
+obj-$(CONFIG_SND_SOC_ADD2010)	+= snd-soc-add2010.o
 
 # Mux
 obj-$(CONFIG_SND_SOC_SIMPLE_MUX)	+= snd-soc-simple-mux.o

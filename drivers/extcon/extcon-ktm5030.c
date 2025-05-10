@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2024-2025, Qualcomm Innovation Center, Inc. All rights reserved.
  *
  */
 
@@ -886,7 +886,7 @@ static int ktm5030_pm_resume(struct device *dev)
 	pdata = i2c_get_clientdata(client);
 	if (!pdata)
 		return 0;
-	return -EIO;
+	return 0;
 }
 
 static const struct dev_pm_ops ktm5030_pm_ops = {

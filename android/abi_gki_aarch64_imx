@@ -2280,8 +2280,8 @@
   dmabuf_page_pool_free
 
 # required by timer-imx-tpm.ko
-  clocksource_mmio_init
-  clocksource_mmio_readl_up
+#  clocksource_mmio_init
+#  clocksource_mmio_readl_up
   sched_clock_register
 
 # required by trusty-ipc.ko

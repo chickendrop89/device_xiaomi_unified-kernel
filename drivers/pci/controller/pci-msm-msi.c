@@ -723,7 +723,7 @@ int msm_msi_init(struct device *dev)
 		msi_irq_setup = msm_msi_snps_irq_setup;
 	} else {
 		msi->nr_virqs = msi->nr_hwirqs;
-		msi->nr_grps = 1;
+		msi->nr_grps = (msi->nr_hwirqs + MSI_IRQ_PER_GRP - 1) / MSI_IRQ_PER_GRP;
 		msi->mask_irq = msm_msi_qgic_mask_irq;
 		msi->unmask_irq = msm_msi_qgic_unmask_irq;
 		msi_irq_setup = msm_msi_qgic_irq_setup;

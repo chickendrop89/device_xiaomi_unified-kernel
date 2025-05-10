@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2023, 2025, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/clk.h>
@@ -3916,12 +3916,13 @@ static int gcc_khaje_probe(struct platform_device *pdev)
 	/*
 	 * Keep the clocks always-ON
 	 * GCC_CAMERA_AHB_CLK, GCC_DISP_AHB_CLK
-	 * GCC_SYS_NOC_CPUSS_AHB_CLK
+	 * GCC_SYS_NOC_CPUSS_AHB_CLK, GCC_LPASS_SWAY_CLK
 	 */
 
 	regmap_update_bits(regmap, 0x17008, BIT(0), BIT(0));
 	regmap_update_bits(regmap, 0x1700c, BIT(0), BIT(0));
 	regmap_update_bits(regmap, 0x2b06c, BIT(0), BIT(0));
+	regmap_update_bits(regmap, 0x3a00c, BIT(0), BIT(0));
 
 	clk_lucid_pll_configure(&gpll10, regmap, &gpll10_config);
 	clk_lucid_pll_configure(&gpll11, regmap, &gpll11_config);

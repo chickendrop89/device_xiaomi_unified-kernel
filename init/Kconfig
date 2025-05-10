@@ -2414,6 +2414,21 @@ config UNUSED_KSYMS_WHITELIST
 	  one per line. The path can be absolute, or relative to the kernel
 	  source tree.
 
+config SUPPRESS_VENDOR_MODULE_DEBUGGING
+	bool "Suppress vendor module debugging"
+	help
+	  Some vendor GKI modules were built with debugging compiled in, this
+	  spams the console with info we won't need and covers up important
+	  logs.
+
+	  This hack is specific to xiaomi devices. The modules affected can 
+	  be found in the filtered_modules[] array in kernel/printk.c
+
+	  Do not select this if you are debugging, or planning to build the 
+	  modules into the kernel image.
+
+	  If unsure, say N.
+
 endif # MODULES
 
 config MODULES_TREE_LOOKUP

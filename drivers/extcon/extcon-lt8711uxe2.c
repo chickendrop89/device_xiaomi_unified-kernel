@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2024-2025, Qualcomm Innovation Center, Inc. All rights reserved.
  *
  */
 
@@ -104,7 +104,6 @@ struct lt8711uxe2 {
 
 	u32 cc_finished_gpio;
 	int cc_irq;
-	bool usb_role;
 	bool is_cc_finished;
 };
 
@@ -1131,6 +1130,9 @@ static void lt8711uxe2_check_state(struct lt8711uxe2 *pdata)
 	union extcon_property_value flip;
 	union extcon_property_value ss_func;
 	u8 flip_reg_val = 0;
+	bool host_mode = false;
+	bool device_mode = false;
+	bool connected = false;
 	bool flipped = false;
 	unsigned int extcon_id = EXTCON_NONE;
 	u32 dp_lane = gpio_get_value(pdata->dp_lane_sel_gpio);
@@ -1146,16 +1148,23 @@ static void lt8711uxe2_check_state(struct lt8711uxe2 *pdata)
 	switch (data_role) {
 	case LT8711UXE2_DISCONNECTED:
 		pr_debug("%s LT8711UXE2_DISCONNECTED\n", __func__);
+		host_mode = false;
+		device_mode = false;
+		connected = false;
 		break;
 	case LT8711UXE2_DFP_ATTACHED:
 		pr_debug("%s LT8711UXE2_DFP_ATTACH (device mode)\n", __func__);
 		extcon_id = EXTCON_USB;
-		pdata->usb_role = false;
+		host_mode = false;
+		device_mode = true;
+		connected = true;
 		break;
 	case LT8711UXE2_UFP_ATTACHED:
 		pr_debug("%s LT8711UXE2_UFP_ATTACH (host mode)\n", __func__);
 		extcon_id = EXTCON_USB_HOST;
-		pdata->usb_role = true;
+		host_mode = true;
+		device_mode = false;
+		connected = true;
 		break;
 	default:
 		dev_err(pdata->dev, "Unknown state: %#x\n", data_role);
@@ -1168,8 +1177,9 @@ static void lt8711uxe2_check_state(struct lt8711uxe2 *pdata)
 		return;
 	}
 
-	extcon_set_state(pdata->edev, EXTCON_USB_HOST, pdata->usb_role);
-	extcon_set_state(pdata->edev, EXTCON_USB, !pdata->usb_role);
+	extcon_set_state(pdata->edev, EXTCON_USB_HOST, host_mode);
+	extcon_set_state(pdata->edev, EXTCON_USB, device_mode);
+
 	if (pdata->usb_ss_support) {
 		if (dp_lane == LT8711UXE2_DP_2LANE)
 			ss_func.intval = 1;
@@ -1249,9 +1259,13 @@ static irqreturn_t lt8711uxe2_cc_irq_thread_handler(int irq, void *dev_id)
 {
 	struct lt8711uxe2 *pdata = (struct lt8711uxe2 *)dev_id;
 
-	if (!pdata->is_cc_finished) {
+	if (gpio_get_value(pdata->cc_finished_gpio)) {
 		pdata->is_cc_finished = true;
 		lt8711uxe2_reset(pdata, true);
+		pr_debug("get cc gpio high\n");
+	} else {
+		gpio_set_value(pdata->reset_gpio, LT8711UXE2_GPIO_LOW);
+		pr_debug("get cc gpio low\n");
 	}
 
 	return IRQ_HANDLED;
@@ -1399,7 +1413,8 @@ static int lt8711uxe2_probe(struct i2c_client *client,
 		pdata->cc_irq = gpio_to_irq(pdata->cc_finished_gpio);
 		ret = devm_request_threaded_irq(&client->dev, pdata->cc_irq, NULL,
 					lt8711uxe2_cc_irq_thread_handler,
-					IRQF_TRIGGER_RISING | IRQF_ONESHOT,
+					IRQF_TRIGGER_RISING |
+					IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
 					"lt8711uxe2_cc_irq", pdata);
 		if (ret) {
 			pr_err("failed to request cc_irq\n");

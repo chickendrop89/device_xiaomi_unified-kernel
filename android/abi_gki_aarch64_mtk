@@ -162,8 +162,8 @@
   clk_unprepare
   clockevents_config_and_register
   clocks_calc_mult_shift
-  clocksource_mmio_init
-  clocksource_mmio_readl_up
+# clocksource_mmio_init
+# clocksource_mmio_readl_up
   cma_alloc
   cma_release
   compat_ptr_ioctl

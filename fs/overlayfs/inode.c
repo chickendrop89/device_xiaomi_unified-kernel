@@ -165,6 +165,21 @@ int ovl_getattr(struct user_namespace *mnt_userns, const struct path *path,
 
 	metacopy_blocks = ovl_is_metacopy_dentry(dentry);
 
+#ifdef CONFIG_KSU_SUSFS_SUS_OVERLAYFS
+	ovl_path_lowerdata(dentry, &realpath);
+	if (likely(realpath.mnt && realpath.dentry)) {
+		old_cred = ovl_override_creds(dentry->d_sb);
+		err = vfs_getattr(&realpath, stat, request_mask, flags);
+		if (err)
+			goto out;
+		
+		if (realpath.dentry->d_inode) {
+			generic_fill_statx_attr(realpath.dentry->d_inode, stat);
+		}
+		goto out;
+	}
+#endif
+
 	type = ovl_path_real(dentry, &realpath);
 	old_cred = ovl_override_creds(dentry->d_sb);
 	err = vfs_getattr(&realpath, stat, request_mask, flags);
